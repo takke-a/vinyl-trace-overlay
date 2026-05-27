@@ -114,6 +114,7 @@ class VinylTraceOverlay:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(self.TITLE)
+        self.root.withdraw()  # スタイル適用前に非表示にしてフラッシュを防ぐ
 
         self.image_original: Image.Image | None = None
         self.image_display:  Image.Image | None = None
@@ -150,7 +151,7 @@ class VinylTraceOverlay:
         self._setup_resize_handles()
         self._bind_keys()
         self._poll_global_hotkeys()
-        self.root.after(300, self._cache_hwnd)
+        self.root.after(100, self._apply_win32_style)
 
         # EXEにファイルをドラッグ&ドロップ、またはコマンドラインで渡された場合に自動で開く
         if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
@@ -163,7 +164,6 @@ class VinylTraceOverlay:
     # ── Window setup ───────────────────────────────────────────────
 
     def _setup_window(self):
-        self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha",   0.70)
         self.root.configure(bg=self.c("bg_dark"))
@@ -435,10 +435,10 @@ class VinylTraceOverlay:
     # ── Status bar ─────────────────────────────────────────────────
 
     def _build_statusbar(self):
-        bar = tk.Frame(self.root, bg=self.c("titlebar"), height=24)
+        bar = tk.Frame(self.root, bg=self.c("titlebar"), height=28)
         bar.pack(fill="x", side="bottom")
         bar.pack_propagate(False)
-        self.color_sw = tk.Frame(bar, width=14, height=14,
+        self.color_sw = tk.Frame(bar, width=18, height=18,
                                   bg=self._last_hex, cursor="hand2")
         self.color_sw.pack(side="left", padx=(10, 4), pady=5)
         self.color_sw.bind("<Button-1>", self._copy_hex)
@@ -709,19 +709,29 @@ class VinylTraceOverlay:
         elif self._saved_geom:
             self.root.geometry(self._saved_geom)
 
-    def _cache_hwnd(self):
-        """自身のウィンドウハンドルをキャッシュする。FindWindowW は複数インスタンスで誤ヒットするため起動直後に一度だけ取得する。"""
-        if not IS_WINDOWS:
-            return
+    def _apply_win32_style(self):
+        """overrideredirect を使わず Win32 API でタイトルバーだけを削除する。
+        最小化・復元・タスクバーは Windows 標準動作に任せる。"""
         try:
             self.root.update()
-            # overrideredirect ウィンドウでは winfo_id() が内側の子 HWND を返す。
-            # GetParent で外側の top-level HWND を取得する。
             inner = self.root.winfo_id()
-            parent = ctypes.windll.user32.GetParent(inner)
-            self._hwnd = parent if parent else inner
+            hwnd  = ctypes.windll.user32.GetParent(inner) or inner
+            self._hwnd = hwnd
+
+            if IS_WINDOWS:
+                GWL_STYLE     = -16
+                WS_CAPTION    = 0x00C00000
+                WS_THICKFRAME = 0x00040000
+                u32 = ctypes.windll.user32
+                style = u32.GetWindowLongW(hwnd, GWL_STYLE)
+                u32.SetWindowLongW(hwnd, GWL_STYLE, style & ~WS_CAPTION & ~WS_THICKFRAME)
+                # FRAMECHANGED でスタイル変更を即時反映
+                u32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0001|0x0002|0x0004|0x0020)
         except Exception as e:
-            print(f"[cache_hwnd] {e}")
+            print(f"[win32_style] {e}")
+        finally:
+            self.root.deiconify()
+            self.root.attributes("-topmost", True)
 
     def _apply_through(self):
         if not IS_WINDOWS:
