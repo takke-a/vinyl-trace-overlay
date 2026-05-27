@@ -308,7 +308,10 @@ class VinylTraceOverlay:
         r1 = tk.Frame(parent, bg=BG)
         r1.pack(fill="x", pady=(0, 10))
         self._accent_btn(r1, "Open Image", self.open_image).pack(side="left")
-        tk.Frame(r1, bg=BG, width=20).pack(side="left")
+        self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
+        self.btn_clear.pack(side="left", padx=(4, 0))
+        self.btn_clear.pack_forget()
+        tk.Frame(r1, bg=BG, width=12).pack(side="left")
         tk.Label(r1, text="Mode", bg=BG, fg=self.c("text_muted"),
                  font=("Segoe UI", 9)).pack(side="left", padx=(0, 8))
         self._style_cb()
@@ -501,9 +504,20 @@ class VinylTraceOverlay:
             self.status_var.set(
                 f"{os.path.basename(path)}  |  {img.width}×{img.height}px")
             self.canvas.delete("ph")
+            self.btn_clear.pack(side="left", padx=(4, 0))
             self.update_display()
         except Exception as e:
             messagebox.showerror("Error", str(e))
+
+    def _clear_image(self):
+        self.image_original = None
+        self.image_display  = None
+        self.photo          = None
+        self.pan_x = self.pan_y = 0
+        self.canvas.delete("all")
+        self._placeholder()
+        self.btn_clear.pack_forget()
+        self.status_var.set("No image loaded  —  Ctrl+O to open")
 
     # ═══════════════════════════════════════════════════════════════
     # Display
