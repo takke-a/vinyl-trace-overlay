@@ -947,8 +947,17 @@ class VinylTraceOverlay:
     # Window drag
     # ═══════════════════════════════════════════════════════════════
 
-    def _drag_start(self, e): self._dx, self._dy = e.x, e.y
+    def _drag_start(self, e):
+        if self.lock_var.get(): return
+        if IS_WINDOWS and self._hwnd:
+            # OS にドラッグを委譲：Python ループ経由より遥かに滑らか
+            ctypes.windll.user32.ReleaseCapture()
+            ctypes.windll.user32.SendMessageW(self._hwnd, 0x00A1, 2, 0)
+        else:
+            self._dx, self._dy = e.x, e.y
+
     def _drag_move(self, e):
+        if IS_WINDOWS and self._hwnd: return  # Win32 native drag が処理済み
         if self.lock_var.get(): return
         self.root.geometry(
             f"+{self.root.winfo_x()+(e.x-self._dx)}"
