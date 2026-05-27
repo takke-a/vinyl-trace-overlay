@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vinyl Trace Overlay  v3.2"""
 
-import sys, os, ctypes, tkinter as tk
+import sys, os, ctypes, json, re, tkinter as tk
 from tkinter import ttk, filedialog, colorchooser, messagebox
 from PIL import Image, ImageTk, ImageFilter, ImageOps, ImageEnhance, ImageDraw
 
@@ -111,6 +111,36 @@ class VinylTraceOverlay:
 
     LAYER_MAX = 3000
 
+    DEFAULT_KEYS = {
+        "open_image":    "<Control-o>",
+        "toggle_ui":     "<F1>",
+        "click_through": "<F2>",
+        "toggle_grid":   "<F3>",
+        "light_bg":      "<F4>",
+        "hsb_lock":      "<F5>",
+        "copy_color":    "<Control-c>",
+        "fullscreen":    "<F11>",
+        "scale_up":      "<Control-equal>",
+        "scale_down":    "<Control-minus>",
+        "layer_inc":     "<Control-Up>",
+        "layer_dec":     "<Control-Down>",
+    }
+
+    KEY_LABELS = {
+        "open_image":    "Open Image",
+        "toggle_ui":     "Toggle UI",
+        "click_through": "Click-Through",
+        "toggle_grid":   "Grid",
+        "light_bg":      "Light BG",
+        "hsb_lock":      "HSB Lock",
+        "copy_color":    "Copy Color",
+        "fullscreen":    "Fullscreen",
+        "scale_up":      "Scale Up",
+        "scale_down":    "Scale Down",
+        "layer_inc":     "Layer +",
+        "layer_dec":     "Layer −",
+    }
+
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(self.TITLE)
@@ -149,8 +179,11 @@ class VinylTraceOverlay:
         self._last_H = self._last_S = self._last_B = 0
         self._last_rgb = (0, 0, 0)
         self.color_fmt_var = tk.StringVar(value="HSB")
+        self._keybindings = dict(self.DEFAULT_KEYS)
+        self._rebinding_action = None
 
         self._setup_window()
+        self._load_settings()
         self._build_ui()
         self._setup_resize_handles()
         self._bind_keys()
@@ -235,10 +268,20 @@ class VinylTraceOverlay:
 
         self.ctrl_section = tk.Frame(self.root, bg=self.c("bg_panel"))
         self.ctrl_section.pack(fill="x")
-        inner = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
+
+        self._build_tab_bar(self.ctrl_section)
+
+        self._tab_frame_controls = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
+        inner = tk.Frame(self._tab_frame_controls, bg=self.c("bg_panel"))
         inner.pack(fill="x", padx=16, pady=12)
         self._build_controls(inner)
-        tk.Frame(self.ctrl_section, bg=self.c("separator"), height=1).pack(fill="x")
+        self._tab_frame_controls.pack(fill="x")
+
+        self._tab_frame_settings = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
+        self._build_settings(self._tab_frame_settings)
+
+        self._ctrl_sep = tk.Frame(self.ctrl_section, bg=self.c("separator"), height=1)
+        self._ctrl_sep.pack(fill="x")
 
         self._build_canvas()
         self._build_statusbar()
@@ -298,6 +341,60 @@ class VinylTraceOverlay:
         cv.bind("<Enter>",    lambda _: draw(True))
         cv.bind("<Leave>",    lambda _: draw(False))
         cv.bind("<Button-1>", lambda _: cmd())
+
+    # ── Tab bar ───────────────────────────────────────────────────
+
+    def _build_tab_bar(self, parent):
+        bar = tk.Frame(parent, bg=self.c("bg_dark"))
+        bar.pack(fill="x")
+        self._tab_btn_controls = tk.Label(
+            bar, text="  Controls  ",
+            bg=self.c("accent"), fg="white",
+            font=("Segoe UI", 9, "bold"), cursor="hand2", pady=4)
+        self._tab_btn_controls.pack(side="left")
+        self._tab_btn_controls.bind("<Button-1>", lambda _: self._switch_tab("controls"))
+        self._tab_btn_settings = tk.Label(
+            bar, text="  Settings  ",
+            bg=self.c("bg_dark"), fg=self.c("text_muted"),
+            font=("Segoe UI", 9), cursor="hand2", pady=4)
+        self._tab_btn_settings.pack(side="left")
+        self._tab_btn_settings.bind("<Button-1>", lambda _: self._switch_tab("settings"))
+
+    def _switch_tab(self, tab):
+        if tab == "controls":
+            self._tab_frame_settings.pack_forget()
+            self._tab_frame_controls.pack(fill="x", before=self._ctrl_sep)
+            self._tab_btn_controls.configure(
+                bg=self.c("accent"), fg="white", font=("Segoe UI", 9, "bold"))
+            self._tab_btn_settings.configure(
+                bg=self.c("bg_dark"), fg=self.c("text_muted"), font=("Segoe UI", 9))
+        else:
+            self._tab_frame_controls.pack_forget()
+            self._tab_frame_settings.pack(fill="x", before=self._ctrl_sep)
+            self._tab_btn_settings.configure(
+                bg=self.c("accent"), fg="white", font=("Segoe UI", 9, "bold"))
+            self._tab_btn_controls.configure(
+                bg=self.c("bg_dark"), fg=self.c("text_muted"), font=("Segoe UI", 9))
+
+    def _build_settings(self, parent):
+        BG = self.c("bg_panel")
+        inner = tk.Frame(parent, bg=BG)
+        inner.pack(fill="x", padx=16, pady=12)
+        tk.Label(inner, text="Key Bindings", bg=BG, fg=self.c("text"),
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 8))
+        self._kb_btns = {}
+        for action, label in self.KEY_LABELS.items():
+            row = tk.Frame(inner, bg=BG)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, width=16, anchor="w", bg=BG,
+                     fg=self.c("text_muted"), font=("Segoe UI", 9)).pack(side="left")
+            key = self._keybindings.get(action, self.DEFAULT_KEYS[action])
+            btn = self._flat_btn(row, self._fmt_key(key),
+                                 lambda a=action: self._start_rebind(a))
+            btn.pack(side="left")
+            self._kb_btns[action] = btn
+        tk.Frame(inner, bg=self.c("separator"), height=1).pack(fill="x", pady=(8, 6))
+        self._flat_btn(inner, "Reset to Defaults", self._reset_keys).pack(anchor="e")
 
     # ── Controls ───────────────────────────────────────────────────
 
@@ -812,11 +909,10 @@ class VinylTraceOverlay:
 
     def _poll_global_hotkeys(self):
         """Click-Through ON中はオーバーレイがフォーカスを失うため root.bind が効かない。
-        GetAsyncKeyState でフォーカスに関係なく F2 を監視して解除できるようにする。"""
+        GetAsyncKeyState でフォーカスに関係なく設定済みのキーを監視して解除できるようにする。"""
         if IS_WINDOWS and self.through_var.get():
-            VK_F2 = 0x71
-            # 下位ビットが1 = 前回呼び出し以降にキーが押された
-            if ctypes.windll.user32.GetAsyncKeyState(VK_F2) & 0x0001:
+            vk = self._get_vk(self._keybindings.get("click_through", "<F2>"))
+            if vk and ctypes.windll.user32.GetAsyncKeyState(vk) & 0x0001:
                 self._toggle_through()
         self.root.after(100, self._poll_global_hotkeys)
 
@@ -938,23 +1034,143 @@ class VinylTraceOverlay:
         self._set_toggle(self.btn_hsb_lock, self._hsb_locked)
 
     # ═══════════════════════════════════════════════════════════════
+    # Settings / Key Config
+    # ═══════════════════════════════════════════════════════════════
+
+    def _settings_path(self):
+        base = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+                else os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base, "settings.json")
+
+    def _load_settings(self):
+        try:
+            path = self._settings_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                for action, key in data.get("keybindings", {}).items():
+                    if action in self._keybindings:
+                        self._keybindings[action] = key
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        try:
+            with open(self._settings_path(), "w", encoding="utf-8") as f:
+                json.dump({"keybindings": dict(self._keybindings)}, f,
+                          indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _fmt_key(self, tk_key):
+        sym_map = {
+            "Control": "Ctrl", "Shift": "Shift", "Alt": "Alt",
+            "Up": "↑", "Down": "↓", "Left": "←", "Right": "→",
+            "equal": "=", "minus": "-", "plus": "+",
+            "Return": "Enter", "Escape": "Esc", "space": "Space",
+        }
+        k = tk_key.strip("<>")
+        parts = k.split("-")
+        return "+".join(sym_map.get(p, p.upper() if len(p) == 1 else p) for p in parts)
+
+    def _get_vk(self, tk_key):
+        vk_map = {
+            "F1": 0x70, "F2": 0x71, "F3": 0x72, "F4": 0x73,
+            "F5": 0x74, "F6": 0x75, "F7": 0x76, "F8": 0x77,
+            "F9": 0x78, "F10": 0x79, "F11": 0x7A, "F12": 0x7B,
+        }
+        m = re.search(r"([A-Za-z0-9]+)>$", tk_key)
+        return vk_map.get(m.group(1)) if m else None
+
+    def _apply_keybinding(self, action):
+        handlers = {
+            "open_image":    self.open_image,
+            "toggle_ui":     lambda _: self._toggle_controls(),
+            "click_through": lambda _: self._toggle_through(),
+            "toggle_grid":   lambda _: self._toggle_grid(),
+            "light_bg":      lambda _: self._toggle_light_bg(),
+            "hsb_lock":      lambda _: self._toggle_hsb_lock(),
+            "copy_color":    lambda _: self._copy_hsb(),
+            "fullscreen":    lambda _: self._toggle_fullscreen(),
+            "scale_up":      lambda _: self._adj_scale(10),
+            "scale_down":    lambda _: self._adj_scale(-10),
+            "layer_inc":     lambda _: self._layer_inc(),
+            "layer_dec":     lambda _: self._layer_dec(),
+        }
+        key = self._keybindings.get(action)
+        handler = handlers.get(action)
+        if key and handler:
+            self.root.bind(key, handler)
+
+    def _start_rebind(self, action):
+        if self._rebinding_action:
+            self._cancel_rebind()
+        btn = self._kb_btns[action]
+        btn.configure(text=" Press key... ", bg=self.c("accent"), fg="white")
+        self._rebinding_action = action
+        self.root.bind("<KeyPress>", self._capture_key)
+
+    def _capture_key(self, event):
+        if not self._rebinding_action:
+            self.root.unbind("<KeyPress>")
+            return "break"
+        sym = event.keysym
+        if sym in ("Control_L", "Control_R", "Shift_L", "Shift_R",
+                   "Alt_L", "Alt_R", "Meta_L", "Meta_R"):
+            return "break"
+        if sym == "Escape":
+            self._cancel_rebind()
+            return "break"
+        mods = ""
+        if event.state & 0x4: mods += "Control-"
+        if event.state & 0x1: mods += "Shift-"
+        if event.state & 0x8: mods += "Alt-"
+        key = f"<{mods}{sym}>"
+        action = self._rebinding_action
+        old_key = self._keybindings.get(action)
+        if old_key and old_key != key:
+            try: self.root.unbind(old_key)
+            except Exception: pass
+        self._keybindings[action] = key
+        self._apply_keybinding(action)
+        self._kb_btns[action].configure(
+            text=f"  {self._fmt_key(key)}  ",
+            bg=self.c("bg_btn"), fg=self.c("text"))
+        self._rebinding_action = None
+        self.root.unbind("<KeyPress>")
+        self._save_settings()
+        return "break"
+
+    def _cancel_rebind(self):
+        if not self._rebinding_action:
+            return
+        action = self._rebinding_action
+        key = self._keybindings.get(action, self.DEFAULT_KEYS[action])
+        self._kb_btns[action].configure(
+            text=f"  {self._fmt_key(key)}  ",
+            bg=self.c("bg_btn"), fg=self.c("text"))
+        self._rebinding_action = None
+        self.root.unbind("<KeyPress>")
+
+    def _reset_keys(self):
+        for old_key in self._keybindings.values():
+            try: self.root.unbind(old_key)
+            except Exception: pass
+        self._keybindings = dict(self.DEFAULT_KEYS)
+        for action, btn in self._kb_btns.items():
+            key = self.DEFAULT_KEYS[action]
+            btn.configure(text=f"  {self._fmt_key(key)}  ")
+            self._apply_keybinding(action)
+        self._save_settings()
+
+    # ═══════════════════════════════════════════════════════════════
     # Keys
     # ═══════════════════════════════════════════════════════════════
 
     def _bind_keys(self):
-        self.root.bind("<Control-o>",     self.open_image)
-        self.root.bind("<F1>",            lambda _: self._toggle_controls())
-        self.root.bind("<F2>",            lambda _: self._toggle_through())
-        self.root.bind("<F3>",            lambda _: self._toggle_grid())
-        self.root.bind("<F4>",            lambda _: self._toggle_light_bg())
-        self.root.bind("<F5>",            lambda _: self._toggle_hsb_lock())
-        self.root.bind("<Control-c>",     lambda _: self._copy_hsb())
-        self.root.bind("<F11>",           lambda _: self._toggle_fullscreen())
-        self.root.bind("<Control-equal>", lambda _: self._adj_scale(10))
-        self.root.bind("<Control-plus>",  lambda _: self._adj_scale(10))
-        self.root.bind("<Control-minus>", lambda _: self._adj_scale(-10))
-        self.root.bind("<Control-Up>",    lambda _: self._layer_inc())
-        self.root.bind("<Control-Down>",  lambda _: self._layer_dec())
+        for action in self._keybindings:
+            self._apply_keybinding(action)
+        self.root.bind("<Control-plus>", lambda _: self._adj_scale(10))
         self.root.bind("<Escape>",
             lambda _: self._toggle_fullscreen() if self.is_fs else self.root.quit())
 
