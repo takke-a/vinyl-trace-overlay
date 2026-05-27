@@ -948,20 +948,14 @@ class VinylTraceOverlay:
     # ═══════════════════════════════════════════════════════════════
 
     def _drag_start(self, e):
-        if self.lock_var.get(): return
-        if IS_WINDOWS and self._hwnd:
-            # OS にドラッグを委譲：Python ループ経由より遥かに滑らか
-            ctypes.windll.user32.ReleaseCapture()
-            ctypes.windll.user32.SendMessageW(self._hwnd, 0x00A1, 2, 0)
-        else:
-            self._dx, self._dy = e.x, e.y
+        # ドラッグ開始時に「ウィンドウ左上 - マウス絶対座標」のオフセットを一度だけ記録
+        self._dx = self.root.winfo_x() - e.x_root
+        self._dy = self.root.winfo_y() - e.y_root
 
     def _drag_move(self, e):
-        if IS_WINDOWS and self._hwnd: return  # Win32 native drag が処理済み
         if self.lock_var.get(): return
-        self.root.geometry(
-            f"+{self.root.winfo_x()+(e.x-self._dx)}"
-            f"+{self.root.winfo_y()+(e.y-self._dy)}")
+        # 画面絶対座標を使うので毎フレームの winfo_x/y 問い合わせが不要
+        self.root.geometry(f"+{e.x_root + self._dx}+{e.y_root + self._dy}")
 
     def _minimize(self):
         self.root.overrideredirect(False); self.root.iconify()
