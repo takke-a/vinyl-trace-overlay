@@ -304,7 +304,7 @@ class VinylTraceOverlay:
     def _build_controls(self, parent):
         BG = self.c("bg_panel")
 
-        # Row 1 — Open + Mode
+        # Row 1 — Open
         r1 = tk.Frame(parent, bg=BG)
         r1.pack(fill="x", pady=(0, 10))
         self._open_btn = self._accent_btn(r1, "Open Image", self.open_image)
@@ -313,15 +313,6 @@ class VinylTraceOverlay:
         self.lbl_image_path = tk.Label(r1, text="", bg=BG, fg=self.c("text_muted"),
                                        font=("Segoe UI", 8))
         self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
-        tk.Frame(r1, bg=BG, width=12).pack(side="left")
-        tk.Label(r1, text="Mode", bg=BG, fg=self.c("text_muted"),
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 8))
-        self._style_cb()
-        cb = ttk.Combobox(r1, textvariable=self.mode_var, width=15, state="readonly",
-                          values=["Normal", "Edge Detect", "Grayscale",
-                                  "Invert", "High Contrast", "Soft Glow"])
-        cb.pack(side="left")
-        cb.bind("<<ComboboxSelected>>", lambda _: self.update_display())
 
         # Row 2 — Opacity slider
         r2 = tk.Frame(parent, bg=BG)
@@ -335,6 +326,15 @@ class VinylTraceOverlay:
         self.opacity_lbl = tk.Label(r2, text="70%", width=5, anchor="w", bg=BG,
                                      fg=self.c("text"), font=("Segoe UI", 9, "bold"))
         self.opacity_lbl.pack(side="left")
+        tk.Frame(r2, bg=BG, width=12).pack(side="left")
+        tk.Label(r2, text="Mode", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 8))
+        self._style_cb()
+        cb = ttk.Combobox(r2, textvariable=self.mode_var, width=15, state="readonly",
+                          values=["Normal", "Edge Detect", "Grayscale",
+                                  "Invert", "High Contrast", "Soft Glow"])
+        cb.pack(side="left")
+        cb.bind("<<ComboboxSelected>>", lambda _: self.update_display())
 
         # Row 3 — Scale slider
         r3 = tk.Frame(parent, bg=BG)
