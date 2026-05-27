@@ -1,23 +1,90 @@
 #!/usr/bin/env python3
-"""
-Vinyl Trace Overlay
-Reference image overlay tool for vinyl group creation
-"""
+"""Vinyl Trace Overlay  v3.0"""
 
-import sys
-import os
-import ctypes
-import tkinter as tk
+import sys, os, ctypes, tkinter as tk
 from tkinter import ttk, filedialog, colorchooser, messagebox
 from PIL import Image, ImageTk, ImageFilter, ImageOps, ImageEnhance, ImageDraw
 
 IS_WINDOWS = sys.platform == "win32"
+MIN_W, MIN_H = 500, 380
 
+
+# ─────────────────────────────────────────────────────────────────
+# Custom Canvas Slider
+# ─────────────────────────────────────────────────────────────────
+
+class ModernSlider(tk.Canvas):
+    TRACK_H = 3
+    THUMB_R = 7
+
+    def __init__(self, parent, from_=0, to=100, variable=None,
+                 command=None, width=180,
+                 col_track="#1a1b1e", col_fill="#5865f2", col_thumb="#ffffff",
+                 **kw):
+        h = (self.THUMB_R + 3) * 2
+        super().__init__(parent, width=width, height=h,
+                         bd=0, highlightthickness=0,
+                         bg=parent.cget("bg"), **kw)
+        self._lo  = float(from_)
+        self._hi  = float(to)
+        self._var = variable or tk.DoubleVar(value=from_)
+        self._cmd = command
+        self._ct  = col_track
+        self._cf  = col_fill
+        self._cth = col_thumb
+        self._dragging = False
+
+        self.bind("<Configure>",       lambda _: self._draw())
+        self.bind("<Button-1>",        self._press)
+        self.bind("<B1-Motion>",       self._drag)
+        self.bind("<ButtonRelease-1>", lambda _: setattr(self, "_dragging", False))
+        self._var.trace_add("write",   lambda *_: self._draw())
+
+    def _draw(self, *_):
+        self.delete("all")
+        W   = self.winfo_width() or int(self["width"])
+        H   = self.winfo_height()
+        cy  = H // 2
+        pad = self.THUMB_R + 3
+
+        self.create_line(pad, cy, W - pad, cy,
+                         fill=self._ct, width=self.TRACK_H, capstyle="round")
+
+        pct = max(0.0, min(1.0,
+              (self._var.get() - self._lo) / max(1, self._hi - self._lo)))
+        tx  = pad + pct * (W - 2 * pad)
+
+        if tx > pad:
+            self.create_line(pad, cy, tx, cy,
+                             fill=self._cf, width=self.TRACK_H, capstyle="round")
+
+        r = self.THUMB_R
+        self.create_oval(tx - r, cy - r, tx + r, cy + r,
+                         fill=self._cth, outline="")
+
+    def _press(self, e): self._dragging = True;  self._set(e.x)
+    def _drag(self, e):
+        if self._dragging: self._set(e.x)
+
+    def _set(self, x):
+        W   = self.winfo_width()
+        pad = self.THUMB_R + 3
+        pct = max(0.0, min(1.0, (x - pad) / max(1, W - 2 * pad)))
+        v   = self._lo + pct * (self._hi - self._lo)
+        self._var.set(v)
+        if self._cmd: self._cmd(v)
+
+    def get(self): return self._var.get()
+    def set(self, v): self._var.set(v)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Main Application
+# ─────────────────────────────────────────────────────────────────
 
 class VinylTraceOverlay:
     TITLE = "Vinyl Trace Overlay"
 
-    # Discord-inspired dark color palette
     C = {
         "bg_darkest":   "#111214",
         "bg_dark":      "#1e1f22",
@@ -25,33 +92,27 @@ class VinylTraceOverlay:
         "bg_input":     "#1a1b1e",
         "bg_btn":       "#3d4045",
         "bg_btn_hover": "#4e5058",
+        "titlebar":     "#111214",
         "accent":       "#5865f2",
         "accent_dim":   "#4752c4",
         "text":         "#f2f3f5",
         "text_muted":   "#949ba4",
-        "separator":    "#1a1b1e",
-        "success":      "#23a55a",
-        "danger":       "#f23f42",
+        "separator":    "#232428",
+        "danger":       "#c42b1c",
     }
 
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(self.TITLE)
 
-        # Image state
         self.image_original: Image.Image | None = None
         self.image_display:  Image.Image | None = None
-        self.photo: ImageTk.PhotoImage | None = None
+        self.photo: ImageTk.PhotoImage  | None  = None
+        self.pan_x = self.pan_y = 0
+        self._psx  = self._psy  = 0
 
-        # Pan offset (image position within canvas)
-        self.pan_x = 0
-        self.pan_y = 0
-        self._pan_sx = 0
-        self._pan_sy = 0
-
-        # Control state
-        self.opacity_var   = tk.IntVar(value=70)
-        self.scale_var     = tk.IntVar(value=100)
+        self.opacity_var   = tk.DoubleVar(value=70)
+        self.scale_var     = tk.DoubleVar(value=100)
         self.mirror_h_var  = tk.BooleanVar(value=False)
         self.mirror_v_var  = tk.BooleanVar(value=False)
         self.grid_var      = tk.BooleanVar(value=False)
@@ -60,515 +121,438 @@ class VinylTraceOverlay:
         self.mode_var      = tk.StringVar(value="Normal")
         self.grid_size_var = tk.IntVar(value=50)
         self.grid_color    = "#5865f2"
-        self.controls_visible = True
-
-        # Fullscreen state
-        self.is_fullscreen = False
+        self.controls_vis  = True
+        self.is_fs         = False
         self._saved_geom   = ""
 
-        # Window drag / resize
+        # resize state
+        self._rs_dir = ""
+        self._rs_x0 = self._rs_y0 = self._rs_w0 = self._rs_h0 = 0
+        self._rs_wx0 = self._rs_wy0 = 0
+        # drag state
         self._dx = self._dy = 0
-        self._rx = self._ry = self._rw = self._rh = 0
 
-        self._init_window()
+        self._setup_window()
         self._build_ui()
+        self._setup_resize_handles()
         self._bind_keys()
         self.root.mainloop()
 
-    def c(self, key: str) -> str:
-        return self.C[key]
+    def c(self, k): return self.C[k]
 
-    # ═══════════════════════════════════════════════════════════════
-    # Window Initialization
-    # ═══════════════════════════════════════════════════════════════
+    # ── Window setup ───────────────────────────────────────────────
 
-    def _init_window(self):
+    def _setup_window(self):
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
-        self.root.attributes("-alpha", 0.70)
+        self.root.attributes("-alpha",   0.70)
         self.root.configure(bg=self.c("bg_dark"))
-        self.root.minsize(500, 360)
+        self.root.minsize(MIN_W, MIN_H)
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"720x580+{(sw - 720) // 2}+{(sh - 580) // 2}")
+        self.root.geometry(f"720x600+{(sw-720)//2}+{(sh-600)//2}")
 
-    # ═══════════════════════════════════════════════════════════════
-    # UI Construction
-    # ═══════════════════════════════════════════════════════════════
+    # ── 8-direction resize handles (placed over window edges) ──────
+
+    def _setup_resize_handles(self):
+        EDGE, CORN = 5, 10
+        specs = {
+            "n":  dict(relx=0,   rely=0,   relwidth=1,  height=EDGE, anchor="nw", cursor="sb_v_double_arrow"),
+            "s":  dict(relx=0,   rely=1.0, relwidth=1,  height=EDGE, anchor="sw", cursor="sb_v_double_arrow"),
+            "e":  dict(relx=1.0, rely=0,   width=EDGE,  relheight=1, anchor="ne", cursor="sb_h_double_arrow"),
+            "w":  dict(relx=0,   rely=0,   width=EDGE,  relheight=1, anchor="nw", cursor="sb_h_double_arrow"),
+            "nw": dict(relx=0,   rely=0,   width=CORN,  height=CORN, anchor="nw", cursor="size_nw_se"),
+            "ne": dict(relx=1.0, rely=0,   width=CORN,  height=CORN, anchor="ne", cursor="size_ne_sw"),
+            "sw": dict(relx=0,   rely=1.0, width=CORN,  height=CORN, anchor="sw", cursor="size_ne_sw"),
+            "se": dict(relx=1.0, rely=1.0, width=CORN,  height=CORN, anchor="se", cursor="size_nw_se"),
+        }
+        for d, opts in specs.items():
+            cur = opts.pop("cursor")
+            f = tk.Frame(self.root, bg=self.c("bg_dark"), cursor=cur)
+            f.place(**opts)
+            f.lift()
+            f.bind("<Button-1>",  lambda e, _d=d: self._rs_start(e, _d))
+            f.bind("<B1-Motion>", self._rs_drag)
+
+    def _rs_start(self, event, direction):
+        self._rs_dir = direction
+        self._rs_x0  = event.x_root
+        self._rs_y0  = event.y_root
+        self._rs_w0  = self.root.winfo_width()
+        self._rs_h0  = self.root.winfo_height()
+        self._rs_wx0 = self.root.winfo_x()
+        self._rs_wy0 = self.root.winfo_y()
+
+    def _rs_drag(self, event):
+        dx = event.x_root - self._rs_x0
+        dy = event.y_root - self._rs_y0
+        d  = self._rs_dir
+        x, y = self._rs_wx0, self._rs_wy0
+        w, h = self._rs_w0,  self._rs_h0
+
+        if "e" in d: w = max(MIN_W, w + dx)
+        if "s" in d: h = max(MIN_H, h + dy)
+        if "w" in d:
+            nw = max(MIN_W, w - dx)
+            x += w - nw;  w = nw
+        if "n" in d:
+            nh = max(MIN_H, h - dy)
+            y += h - nh;  h = nh
+
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+
+    # ── UI build ───────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Accent top line
         tk.Frame(self.root, bg=self.c("accent"), height=2).pack(fill="x")
-
         self._build_titlebar()
 
-        # Control section (can be hidden with F1)
         self.ctrl_section = tk.Frame(self.root, bg=self.c("bg_panel"))
         self.ctrl_section.pack(fill="x")
-        self.ctrl_frame = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
-        self.ctrl_frame.pack(fill="x", padx=14, pady=10)
-        self._build_controls()
+        inner = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
+        inner.pack(fill="x", padx=16, pady=12)
+        self._build_controls(inner)
         tk.Frame(self.ctrl_section, bg=self.c("separator"), height=1).pack(fill="x")
 
         self._build_canvas()
         self._build_statusbar()
-        self._build_resize_grip()
 
-    # ── Title Bar ──────────────────────────────────────────────────
+    # ── Title bar with Canvas-drawn Windows-style buttons ──────────
 
     def _build_titlebar(self):
-        bar = tk.Frame(self.root, bg=self.c("bg_input"), height=36)
+        bar = tk.Frame(self.root, bg=self.c("titlebar"), height=32)
         bar.pack(fill="x")
         bar.pack_propagate(False)
         self.titlebar = bar
 
-        # Accent dot
         dot = tk.Frame(bar, bg=self.c("accent"), width=8, height=8)
         dot.place(x=14, rely=0.5, anchor="w")
-        for w in [dot]:
+        for w in (dot, bar):
             w.bind("<Button-1>", self._drag_start)
             w.bind("<B1-Motion>", self._drag_move)
 
-        title_lbl = tk.Label(
-            bar, text="Vinyl Trace Overlay",
-            bg=self.c("bg_input"), fg=self.c("text"),
-            font=("Segoe UI", 10, "bold")
-        )
-        title_lbl.pack(side="left", padx=(28, 0))
-        title_lbl.bind("<Button-1>", self._drag_start)
-        title_lbl.bind("<B1-Motion>", self._drag_move)
+        lbl = tk.Label(bar, text="Vinyl Trace Overlay",
+                       bg=self.c("titlebar"), fg=self.c("text"),
+                       font=("Segoe UI", 10, "bold"))
+        lbl.pack(side="left", padx=(30, 0))
+        lbl.bind("<Button-1>", self._drag_start)
+        lbl.bind("<B1-Motion>", self._drag_move)
 
-        bar.bind("<Button-1>", self._drag_start)
-        bar.bind("<B1-Motion>", self._drag_move)
+        # Windows-style control buttons (Canvas-drawn)
+        self._wbtn(bar, "close",    self.root.quit)
+        self._wbtn(bar, "maximize", self._toggle_fullscreen)
+        self._wbtn(bar, "minimize", self._minimize)
 
-        # Window control buttons
-        for txt, cmd, hover_col in [
-            ("  x  ",  self.root.quit,          self.c("danger")),
-            ("  —  ",  self._minimize,           self.c("bg_btn_hover")),
-            ("  [ ] ", self._toggle_fullscreen,  self.c("bg_btn_hover")),
-        ]:
-            lbl = tk.Label(
-                bar, text=txt,
-                bg=self.c("bg_input"), fg=self.c("text_muted"),
-                font=("Segoe UI", 9), cursor="hand2", padx=2
-            )
-            lbl.pack(side="right")
-            _cmd = cmd
-            _hc  = hover_col
-            lbl.bind("<Enter>",    lambda e, w=lbl, hc=_hc: w.configure(bg=hc, fg=self.c("text")))
-            lbl.bind("<Leave>",    lambda e, w=lbl: w.configure(bg=self.c("bg_input"), fg=self.c("text_muted")))
-            lbl.bind("<Button-1>", lambda e, c=_cmd: c())
+        tk.Label(bar, text="v3.0", bg=self.c("titlebar"),
+                 fg=self.c("text_muted"), font=("Segoe UI", 8)
+                 ).pack(side="right", padx=8)
 
-        tk.Label(
-            bar, text="v2.0",
-            bg=self.c("bg_input"), fg=self.c("text_muted"),
-            font=("Segoe UI", 8)
-        ).pack(side="right", padx=10)
+    def _wbtn(self, parent, kind, cmd):
+        cv = tk.Canvas(parent, width=46, height=32,
+                       bg=self.c("titlebar"), highlightthickness=0, cursor="hand2")
+        cv.pack(side="right")
+
+        DANGER = self.c("danger")
+        OTHER  = "#3a3b3e"
+        TITLE  = self.c("titlebar")
+
+        def draw(hover=False):
+            cv.delete("all")
+            bg = (DANGER if kind == "close" else OTHER) if hover else TITLE
+            cv.configure(bg=bg)
+            fg = "#ffffff" if hover else self.c("text_muted")
+            cx, cy = 23, 16
+            if kind == "minimize":
+                # thin horizontal line (─)
+                cv.create_line(cx - 6, cy + 3, cx + 6, cy + 3, fill=fg, width=1)
+            elif kind == "maximize":
+                # hollow square (□)
+                cv.create_rectangle(cx - 6, cy - 5, cx + 6, cy + 5,
+                                    outline=fg, width=1)
+            elif kind == "close":
+                # X (✕)
+                cv.create_line(cx - 6, cy - 5, cx + 6, cy + 5, fill=fg, width=1)
+                cv.create_line(cx + 6, cy - 5, cx - 6, cy + 5, fill=fg, width=1)
+
+        draw()
+        cv.bind("<Enter>",    lambda _: draw(True))
+        cv.bind("<Leave>",    lambda _: draw(False))
+        cv.bind("<Button-1>", lambda _: cmd())
 
     # ── Controls ───────────────────────────────────────────────────
 
-    def _build_controls(self):
-        # ── Row 1: Open + Mode ─────────────────────────────────
-        r1 = tk.Frame(self.ctrl_frame, bg=self.c("bg_panel"))
-        r1.pack(fill="x", pady=(0, 10))
+    def _build_controls(self, parent):
+        BG = self.c("bg_panel")
+
+        # Row 1 — Open + Mode
+        r1 = tk.Frame(parent, bg=BG)
+        r1.pack(fill="x", pady=(0, 12))
 
         self._accent_btn(r1, "Open Image", self.open_image).pack(side="left")
+        tk.Frame(r1, bg=BG, width=20).pack(side="left")
+        tk.Label(r1, text="Mode", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 8))
+        self._style_cb()
+        cb = ttk.Combobox(r1, textvariable=self.mode_var, width=15, state="readonly",
+                          values=["Normal", "Edge Detect", "Grayscale",
+                                  "Invert", "High Contrast", "Soft Glow"])
+        cb.pack(side="left")
+        cb.bind("<<ComboboxSelected>>", lambda _: self.update_display())
 
-        sep = tk.Frame(r1, bg=self.c("bg_panel"), width=20)
-        sep.pack(side="left")
+        # Row 2 — Opacity slider
+        r2 = tk.Frame(parent, bg=BG)
+        r2.pack(fill="x", pady=(0, 8))
+        tk.Label(r2, text="Opacity", width=8, anchor="w", bg=BG,
+                 fg=self.c("text_muted"), font=("Segoe UI", 9)).pack(side="left")
+        ModernSlider(r2, from_=10, to=100, variable=self.opacity_var,
+                     command=self._on_opacity, width=160,
+                     col_track=self.c("bg_input"), col_fill=self.c("accent")
+                     ).pack(side="left", padx=(0, 8))
+        self.opacity_lbl = tk.Label(r2, text="70%", width=5, anchor="w", bg=BG,
+                                     fg=self.c("text"), font=("Segoe UI", 9, "bold"))
+        self.opacity_lbl.pack(side="left")
 
-        tk.Label(
-            r1, text="Mode",
-            bg=self.c("bg_panel"), fg=self.c("text_muted"),
-            font=("Segoe UI", 9)
-        ).pack(side="left", padx=(0, 6))
+        # Row 3 — Scale slider
+        r3 = tk.Frame(parent, bg=BG)
+        r3.pack(fill="x", pady=(0, 12))
+        tk.Label(r3, text="Scale", width=8, anchor="w", bg=BG,
+                 fg=self.c("text_muted"), font=("Segoe UI", 9)).pack(side="left")
+        ModernSlider(r3, from_=5, to=400, variable=self.scale_var,
+                     command=self._on_scale, width=160,
+                     col_track=self.c("bg_input"), col_fill=self.c("accent")
+                     ).pack(side="left", padx=(0, 8))
+        self.scale_lbl = tk.Label(r3, text="100%", width=6, anchor="w", bg=BG,
+                                   fg=self.c("text"), font=("Segoe UI", 9, "bold"))
+        self.scale_lbl.pack(side="left", padx=(0, 16))
+        self._flat_btn(r3, "Fit",        self._fit_image).pack(side="left", padx=(0, 5))
+        self._flat_btn(r3, "1:1",        self._reset_scale).pack(side="left", padx=(0, 5))
+        self._flat_btn(r3, "Reset View", self._reset_view).pack(side="left")
 
-        self._style_combobox()
-        mode_cb = ttk.Combobox(
-            r1, textvariable=self.mode_var, width=15, state="readonly",
-            values=["Normal", "Edge Detect", "Grayscale",
-                    "Invert", "High Contrast", "Soft Glow"]
-        )
-        mode_cb.pack(side="left")
-        mode_cb.bind("<<ComboboxSelected>>", lambda _: self.update_display())
+        # Row 4 — Toggle buttons
+        r4 = tk.Frame(parent, bg=BG)
+        r4.pack(fill="x", pady=(0, 10))
+        self.btn_mh = self._toggle_btn(r4, "Flip H",             self._toggle_mirror_h)
+        self.btn_mv = self._toggle_btn(r4, "Flip V",             self._toggle_mirror_v)
+        self.btn_gr = self._toggle_btn(r4, "Grid  [F3]",         self._toggle_grid)
+        self.btn_ct = self._toggle_btn(r4, "Click-Thru  [F2]",   self._toggle_through)
+        self.btn_lk = self._toggle_btn(r4, "Lock Pos",           self._toggle_lock)
 
-        # ── Row 2: Sliders ─────────────────────────────────────
-        r2 = tk.Frame(self.ctrl_frame, bg=self.c("bg_panel"))
-        r2.pack(fill="x", pady=(0, 10))
+        # Row 5 — Grid settings + hint
+        r5 = tk.Frame(parent, bg=BG)
+        r5.pack(fill="x")
+        tk.Label(r5, text="Grid Color", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 6))
+        self.grid_sw = tk.Label(r5, width=4, bg=self.grid_color,
+                                cursor="hand2", relief="flat")
+        self.grid_sw.pack(side="left", ipady=5, padx=(0, 16))
+        self.grid_sw.bind("<Button-1>", lambda _: self._pick_grid_color())
 
-        tk.Label(
-            r2, text="Opacity", width=7, anchor="w",
-            bg=self.c("bg_panel"), fg=self.c("text_muted"),
-            font=("Segoe UI", 9)
-        ).pack(side="left")
+        tk.Label(r5, text="Cell Size", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 6))
+        ent = tk.Entry(r5, textvariable=self.grid_size_var, width=4,
+                       bg=self.c("bg_input"), fg=self.c("text"),
+                       insertbackground=self.c("text"),
+                       highlightthickness=1, highlightcolor=self.c("accent"),
+                       highlightbackground=self.c("separator"),
+                       relief="flat", font=("Segoe UI", 9))
+        ent.pack(side="left")
+        ent.bind("<Return>",   lambda _: self.update_display())
+        ent.bind("<FocusOut>", lambda _: self.update_display())
+        tk.Label(r5, text=" px", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left")
 
-        tk.Scale(
-            r2, variable=self.opacity_var, from_=10, to=100, orient="h",
-            length=130, command=self._on_opacity, **self._scale_kw()
-        ).pack(side="left")
-
-        self.opacity_lbl = tk.Label(
-            r2, text="70%", width=5, anchor="w",
-            bg=self.c("bg_panel"), fg=self.c("text"),
-            font=("Segoe UI", 9, "bold")
-        )
-        self.opacity_lbl.pack(side="left", padx=(2, 20))
-
-        tk.Label(
-            r2, text="Scale", width=5, anchor="w",
-            bg=self.c("bg_panel"), fg=self.c("text_muted"),
-            font=("Segoe UI", 9)
-        ).pack(side="left")
-
-        tk.Scale(
-            r2, variable=self.scale_var, from_=5, to=400, orient="h",
-            length=130, command=self._on_scale, **self._scale_kw()
-        ).pack(side="left")
-
-        self.scale_lbl = tk.Label(
-            r2, text="100%", width=6, anchor="w",
-            bg=self.c("bg_panel"), fg=self.c("text"),
-            font=("Segoe UI", 9, "bold")
-        )
-        self.scale_lbl.pack(side="left", padx=(2, 16))
-
-        self._flat_btn(r2, "Fit",  self._fit_image).pack(side="left", padx=(0, 4))
-        self._flat_btn(r2, "1:1",  self._reset_scale).pack(side="left", padx=(0, 4))
-        self._flat_btn(r2, "Reset View", self._reset_view).pack(side="left")
-
-        # ── Row 3: Toggle buttons ──────────────────────────────
-        r3 = tk.Frame(self.ctrl_frame, bg=self.c("bg_panel"))
-        r3.pack(fill="x", pady=(0, 10))
-
-        self.btn_mh = self._toggle_btn(r3, "Flip H",       self._toggle_mirror_h)
-        self.btn_mv = self._toggle_btn(r3, "Flip V",       self._toggle_mirror_v)
-        self.btn_gr = self._toggle_btn(r3, "Grid  [F3]",   self._toggle_grid)
-        self.btn_ct = self._toggle_btn(r3, "Click-Thru  [F2]", self._toggle_through)
-        self.btn_lk = self._toggle_btn(r3, "Lock Pos",     self._toggle_lock)
-
-        # ── Row 4: Grid settings ───────────────────────────────
-        r4 = tk.Frame(self.ctrl_frame, bg=self.c("bg_panel"))
-        r4.pack(fill="x")
-
-        tk.Label(
-            r4, text="Grid Color",
-            bg=self.c("bg_panel"), fg=self.c("text_muted"),
-            font=("Segoe UI", 9)
-        ).pack(side="left", padx=(0, 6))
-
-        self.grid_color_lbl = tk.Label(
-            r4, width=4, bg=self.grid_color,
-            cursor="hand2", relief="flat"
-        )
-        self.grid_color_lbl.pack(side="left", ipady=5, padx=(0, 16))
-        self.grid_color_lbl.bind("<Button-1>", lambda _: self._pick_grid_color())
-
-        tk.Label(
-            r4, text="Cell Size",
-            bg=self.c("bg_panel"), fg=self.c("text_muted"),
-            font=("Segoe UI", 9)
-        ).pack(side="left", padx=(0, 6))
-
-        spin = tk.Spinbox(
-            r4, from_=15, to=300, textvariable=self.grid_size_var, width=4,
-            command=self.update_display,
-            bg=self.c("bg_input"), fg=self.c("text"),
-            insertbackground=self.c("text"),
-            buttonbackground=self.c("bg_btn"),
-            highlightthickness=1,
-            highlightcolor=self.c("accent"),
-            highlightbackground=self.c("separator"),
-            relief="flat", font=("Segoe UI", 9)
-        )
-        spin.pack(side="left")
-        spin.bind("<Return>", lambda _: self.update_display())
-
-        tk.Label(
-            r4, text="px",
-            bg=self.c("bg_panel"), fg=self.c("text_muted"),
-            font=("Segoe UI", 9)
-        ).pack(side="left", padx=(4, 0))
-
-        tk.Label(
-            r4, text="Scroll: zoom    Right-drag: pan    F1: toggle UI    F11: fullscreen",
-            bg=self.c("bg_panel"), fg=self.c("text_muted"),
-            font=("Segoe UI", 8)
-        ).pack(side="right")
+        tk.Label(r5,
+                 text="Scroll: zoom    Right-drag: pan    F1: toggle UI    F11: fullscreen",
+                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)
+                 ).pack(side="right")
 
     # ── Canvas ─────────────────────────────────────────────────────
 
     def _build_canvas(self):
-        self.canvas = tk.Canvas(
-            self.root, bg=self.c("bg_darkest"),
-            highlightthickness=0,
-            cursor="crosshair"
-        )
+        self.canvas = tk.Canvas(self.root, bg=self.c("bg_darkest"),
+                                highlightthickness=0, cursor="crosshair")
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>",  lambda _: self.update_display())
         self.canvas.bind("<Motion>",     self._on_hover)
         self.canvas.bind("<Button-1>",   self._on_canvas_click)
-        self.canvas.bind("<MouseWheel>", self._on_scroll_zoom)
-        self.canvas.bind("<Button-4>",   lambda _: self._adjust_scale(5))   # Linux
-        self.canvas.bind("<Button-5>",   lambda _: self._adjust_scale(-5))  # Linux
+        self.canvas.bind("<MouseWheel>", self._on_scroll)
+        self.canvas.bind("<Button-4>",   lambda _: self._adj_scale(5))
+        self.canvas.bind("<Button-5>",   lambda _: self._adj_scale(-5))
         self.canvas.bind("<Button-3>",   self._pan_start)
         self.canvas.bind("<B3-Motion>",  self._pan_move)
-        self.canvas.after(200, self._show_placeholder)
+        self.canvas.after(200, self._placeholder)
 
-    def _show_placeholder(self):
+    def _placeholder(self):
         cw = self.canvas.winfo_width()  or 360
         ch = self.canvas.winfo_height() or 240
         self.canvas.create_text(
             cw // 2, ch // 2,
-            text=(
-                "Open an image to start tracing\n\n"
-                "Ctrl+O  or  click here\n\n"
-                "Scroll to zoom    Right-drag to pan\n"
-                "F2: click-through mode    F3: grid"
-            ),
-            fill=self.c("bg_btn"), font=("Segoe UI", 11),
-            justify="center", tags="ph"
-        )
+            text="Open an image to begin\n\nCtrl+O  ·  click here\n\n"
+                 "Scroll: zoom    Right-drag: pan    F2: click-through",
+            fill=self.c("bg_btn_hover"), font=("Segoe UI", 11),
+            justify="center", tags="ph")
 
-    # ── Status Bar ─────────────────────────────────────────────────
+    # ── Status bar ─────────────────────────────────────────────────
 
     def _build_statusbar(self):
-        bar = tk.Frame(self.root, bg=self.c("bg_input"), height=24)
+        bar = tk.Frame(self.root, bg=self.c("titlebar"), height=24)
         bar.pack(fill="x", side="bottom")
         bar.pack_propagate(False)
-
-        self.color_swatch = tk.Frame(bar, width=14, height=14, bg="#333333")
-        self.color_swatch.pack(side="left", padx=(10, 4), pady=5)
-
+        self.color_sw = tk.Frame(bar, width=14, height=14, bg="#333")
+        self.color_sw.pack(side="left", padx=(10, 4), pady=5)
         self.status_var = tk.StringVar(value="No image loaded  —  Ctrl+O to open")
-        tk.Label(
-            bar, textvariable=self.status_var,
-            bg=self.c("bg_input"), fg=self.c("text_muted"),
-            font=("Consolas", 8)
-        ).pack(side="left")
-
-    # ── Resize Grip ────────────────────────────────────────────────
-
-    def _build_resize_grip(self):
-        grip = tk.Frame(
-            self.root, width=14, height=14,
-            bg=self.c("bg_input"), cursor="size_nw_se"
-        )
-        grip.place(relx=1.0, rely=1.0, anchor="se")
-        grip.bind("<Button-1>",  self._resize_start)
-        grip.bind("<B1-Motion>", self._resize_drag)
+        tk.Label(bar, textvariable=self.status_var,
+                 bg=self.c("titlebar"), fg=self.c("text_muted"),
+                 font=("Consolas", 8)).pack(side="left")
 
     # ═══════════════════════════════════════════════════════════════
-    # Image Loading
+    # Image
     # ═══════════════════════════════════════════════════════════════
 
     def open_image(self, *_):
         path = filedialog.askopenfilename(
             title="Select reference image",
-            filetypes=[
-                ("Images", "*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tiff"),
-                ("All files", "*.*"),
-            ],
-        )
-        if path:
-            self._load_image(path)
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tiff"),
+                       ("All files", "*.*")])
+        if path: self._load(path)
 
-    def _load_image(self, path: str):
+    def _load(self, path):
         try:
-            img = Image.open(path).convert("RGBA")
-            self.image_original = img
-            self.pan_x = 0
-            self.pan_y = 0
-            name = os.path.basename(path)
-            self.status_var.set(f"{name}  |  {img.width} x {img.height} px  |  scroll to zoom  |  right-drag to pan")
+            self.image_original = Image.open(path).convert("RGBA")
+            self.pan_x = self.pan_y = 0
+            img = self.image_original
+            self.status_var.set(
+                f"{os.path.basename(path)}  |  {img.width}×{img.height}px")
             self.canvas.delete("ph")
             self.update_display()
         except Exception as e:
-            messagebox.showerror("Error", f"Could not open image:\n{e}")
+            messagebox.showerror("Error", str(e))
 
     # ═══════════════════════════════════════════════════════════════
-    # Display Update
+    # Display
     # ═══════════════════════════════════════════════════════════════
 
     def update_display(self, *_):
-        if self.image_original is None:
-            return
-
+        if not self.image_original: return
         img = self._apply_mode(self.image_original.copy(), self.mode_var.get())
-
-        if self.mirror_h_var.get():
-            img = ImageOps.mirror(img)
-        if self.mirror_v_var.get():
-            img = ImageOps.flip(img)
-
-        factor = self.scale_var.get() / 100.0
-        tw = max(1, int(img.width  * factor))
-        th = max(1, int(img.height * factor))
-        img = img.resize((tw, th), Image.LANCZOS)
-
-        if self.grid_var.get():
-            img = self._draw_grid(img)
-
+        if self.mirror_h_var.get(): img = ImageOps.mirror(img)
+        if self.mirror_v_var.get(): img = ImageOps.flip(img)
+        f  = max(0.05, self.scale_var.get() / 100.0)
+        img = img.resize((max(1, int(img.width * f)),
+                          max(1, int(img.height * f))), Image.LANCZOS)
+        if self.grid_var.get(): img = self._draw_grid(img)
         self.image_display = img
         self.photo = ImageTk.PhotoImage(img)
-        self._redraw_canvas()
+        self._redraw()
 
-    def _redraw_canvas(self):
-        if self.photo is None:
-            return
+    def _redraw(self):
+        if not self.photo: return
         cw = self.canvas.winfo_width()  or 1
         ch = self.canvas.winfo_height() or 1
         self.canvas.delete("img")
-        self.canvas.create_image(
-            cw // 2 + self.pan_x,
-            ch // 2 + self.pan_y,
-            image=self.photo, anchor="center", tags="img"
-        )
+        self.canvas.create_image(cw // 2 + self.pan_x, ch // 2 + self.pan_y,
+                                  image=self.photo, anchor="center", tags="img")
 
-    # ── Display Modes ──────────────────────────────────────────────
-
-    def _apply_mode(self, img: Image.Image, mode: str) -> Image.Image:
+    def _apply_mode(self, img, mode):
         if mode == "Edge Detect":
-            edges = img.convert("RGB").filter(ImageFilter.FIND_EDGES)
-            return ImageEnhance.Brightness(edges).enhance(4.0).convert("RGBA")
-
+            return ImageEnhance.Brightness(
+                img.convert("RGB").filter(ImageFilter.FIND_EDGES)
+            ).enhance(4.0).convert("RGBA")
         if mode == "Grayscale":
             return ImageOps.grayscale(img.convert("RGB")).convert("RGBA")
-
         if mode == "Invert":
             r, g, b, a = img.split()
-            inv = ImageOps.invert(Image.merge("RGB", (r, g, b)))
-            return Image.merge("RGBA", (*inv.split(), a))
-
+            return Image.merge("RGBA",
+                (*ImageOps.invert(Image.merge("RGB", (r, g, b))).split(), a))
         if mode == "High Contrast":
-            rgb = img.convert("RGB")
-            rgb = ImageEnhance.Contrast(rgb).enhance(3.0)
-            rgb = ImageEnhance.Sharpness(rgb).enhance(2.0)
-            return rgb.convert("RGBA")
-
+            rgb = ImageEnhance.Contrast(img.convert("RGB")).enhance(3.0)
+            return ImageEnhance.Sharpness(rgb).enhance(2.0).convert("RGBA")
         if mode == "Soft Glow":
-            rgb   = img.convert("RGB")
-            blur  = rgb.filter(ImageFilter.GaussianBlur(radius=5))
-            blend = Image.blend(rgb, blur, 0.45)
-            return ImageEnhance.Brightness(blend).enhance(1.25).convert("RGBA")
+            rgb = img.convert("RGB")
+            return ImageEnhance.Brightness(
+                Image.blend(rgb, rgb.filter(ImageFilter.GaussianBlur(5)), 0.45)
+            ).enhance(1.25).convert("RGBA")
+        return img
 
-        return img  # Normal
-
-    # ── Grid (centered on image center) ────────────────────────────
-
-    def _draw_grid(self, img: Image.Image) -> Image.Image:
+    def _draw_grid(self, img):
         out  = img.copy()
         draw = ImageDraw.Draw(out, "RGBA")
         sz   = max(10, self.grid_size_var.get())
-
         try:
             r = int(self.grid_color[1:3], 16)
             g = int(self.grid_color[3:5], 16)
             b = int(self.grid_color[5:7], 16)
-        except Exception:
-            r, g, b = 88, 101, 242
-
-        line_col  = (r, g, b, 80)
-        cross_col = (r, g, b, 210)
-        w, h = out.size
-        cx, cy = w // 2, h // 2
-
-        # Vertical grid lines anchored at cx
-        x_start = cx % sz
-        for x in range(x_start, w, sz):
-            draw.line([(x, 0), (x, h)], fill=line_col, width=1)
-
-        # Horizontal grid lines anchored at cy
-        y_start = cy % sz
-        for y in range(y_start, h, sz):
-            draw.line([(0, y), (w, y)], fill=line_col, width=1)
-
-        # Center crosshair (guaranteed to pass through cx, cy)
-        draw.line([(cx, 0), (cx, h)], fill=cross_col, width=2)
-        draw.line([(0, cy), (w, cy)], fill=cross_col, width=2)
-
-        # Center marker dot
-        dot_r = 5
-        draw.ellipse(
-            [(cx - dot_r, cy - dot_r), (cx + dot_r, cy + dot_r)],
-            fill=(r, g, b, 255)
-        )
-
+        except Exception: r, g, b = 88, 101, 242
+        lc = (r, g, b, 75);  xc = (r, g, b, 220)
+        w, h = out.size;     cx, cy = w // 2, h // 2
+        for x in range(cx % sz, w, sz):
+            draw.line([(x, 0), (x, h)], fill=lc, width=1)
+        for y in range(cy % sz, h, sz):
+            draw.line([(0, y), (w, y)], fill=lc, width=1)
+        draw.line([(cx, 0), (cx, h)], fill=xc, width=2)
+        draw.line([(0, cy), (w, cy)], fill=xc, width=2)
+        draw.ellipse([(cx - 5, cy - 5), (cx + 5, cy + 5)], fill=(r, g, b, 255))
         return out
 
     # ═══════════════════════════════════════════════════════════════
-    # Event Handlers
+    # Events
     # ═══════════════════════════════════════════════════════════════
 
     def _on_opacity(self, val):
-        v = int(val)
+        v = int(float(val))
         self.root.attributes("-alpha", v / 100)
         self.opacity_lbl.configure(text=f"{v}%")
 
     def _on_scale(self, val):
-        self.scale_lbl.configure(text=f"{int(val)}%")
+        self.scale_lbl.configure(text=f"{int(float(val))}%")
         self.update_display()
 
     def _on_hover(self, event):
-        if self.image_display is None:
-            return
+        if not self.image_display: return
         cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
         iw, ih = self.image_display.size
-        ox = cw // 2 + self.pan_x - iw // 2
-        oy = ch // 2 + self.pan_y - ih // 2
-        px = event.x - ox
-        py = event.y - oy
+        px = event.x - (cw // 2 + self.pan_x - iw // 2)
+        py = event.y - (ch // 2 + self.pan_y - ih // 2)
         if 0 <= px < iw and 0 <= py < ih:
             try:
                 r, g, b, a = self.image_display.getpixel((px, py))
                 hx = f"#{r:02x}{g:02x}{b:02x}"
-                self.color_swatch.configure(bg=hx)
+                self.color_sw.configure(bg=hx)
                 self.status_var.set(
-                    f"x:{px:4}  y:{py:4}  |  RGB({r:3},{g:3},{b:3})  |  {hx}  |  alpha:{a}"
-                )
-            except Exception:
-                pass
+                    f"x:{px:4}  y:{py:4}  |  RGB({r:3},{g:3},{b:3})  |  {hx}")
+            except Exception: pass
 
-    def _on_canvas_click(self, _event):
-        if self.image_original is None:
-            self.open_image()
+    def _on_canvas_click(self, _):
+        if not self.image_original: self.open_image()
 
-    def _on_scroll_zoom(self, event):
-        self._adjust_scale(10 if event.delta > 0 else -10)
+    def _on_scroll(self, event):
+        self._adj_scale(10 if event.delta > 0 else -10)
 
-    def _pan_start(self, event):
-        self._pan_sx = event.x
-        self._pan_sy = event.y
-
-    def _pan_move(self, event):
-        self.pan_x += event.x - self._pan_sx
-        self.pan_y += event.y - self._pan_sy
-        self._pan_sx = event.x
-        self._pan_sy = event.y
-        self._redraw_canvas()
+    def _pan_start(self, e): self._psx, self._psy = e.x, e.y
+    def _pan_move(self, e):
+        self.pan_x += e.x - self._psx;  self._psx = e.x
+        self.pan_y += e.y - self._psy;  self._psy = e.y
+        self._redraw()
 
     # ═══════════════════════════════════════════════════════════════
-    # Toggle Actions
+    # Toggles
     # ═══════════════════════════════════════════════════════════════
 
     def _toggle_mirror_h(self):
         self.mirror_h_var.set(not self.mirror_h_var.get())
-        self._set_toggle(self.btn_mh, self.mirror_h_var.get())
-        self.update_display()
+        self._set_toggle(self.btn_mh, self.mirror_h_var.get()); self.update_display()
 
     def _toggle_mirror_v(self):
         self.mirror_v_var.set(not self.mirror_v_var.get())
-        self._set_toggle(self.btn_mv, self.mirror_v_var.get())
-        self.update_display()
+        self._set_toggle(self.btn_mv, self.mirror_v_var.get()); self.update_display()
 
     def _toggle_grid(self):
         self.grid_var.set(not self.grid_var.get())
-        self._set_toggle(self.btn_gr, self.grid_var.get())
-        self.update_display()
+        self._set_toggle(self.btn_gr, self.grid_var.get()); self.update_display()
 
     def _toggle_through(self):
         self.through_var.set(not self.through_var.get())
-        self._set_toggle(self.btn_ct, self.through_var.get())
-        self._apply_click_through()
+        self._set_toggle(self.btn_ct, self.through_var.get()); self._apply_through()
 
     def _toggle_lock(self):
         self.lock_var.set(not self.lock_var.get())
@@ -577,130 +561,89 @@ class VinylTraceOverlay:
         self.btn_lk.configure(text="Locked" if locked else "Lock Pos")
 
     def _toggle_fullscreen(self):
-        self.is_fullscreen = not self.is_fullscreen
-        if self.is_fullscreen:
+        self.is_fs = not self.is_fs
+        if self.is_fs:
             self._saved_geom = self.root.geometry()
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
             self.root.geometry(f"{sw}x{sh}+0+0")
-        else:
-            if self._saved_geom:
-                self.root.geometry(self._saved_geom)
+        elif self._saved_geom:
+            self.root.geometry(self._saved_geom)
 
-    # ── Click-Through (Windows) ────────────────────────────────────
-
-    def _apply_click_through(self):
+    def _apply_through(self):
         if not IS_WINDOWS:
             if self.through_var.get():
                 messagebox.showinfo("Info", "Click-through is Windows only.")
-                self.through_var.set(False)
-                self._set_toggle(self.btn_ct, False)
+                self.through_var.set(False); self._set_toggle(self.btn_ct, False)
             return
         try:
             self.root.update()
             hwnd = ctypes.windll.user32.FindWindowW(None, self.TITLE)
-            if not hwnd:
-                return
-            GWL_EXSTYLE       = -20
-            WS_EX_LAYERED     = 0x00080000
-            WS_EX_TRANSPARENT = 0x00000020
-            cur = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            if self.through_var.get():
-                ctypes.windll.user32.SetWindowLongW(
-                    hwnd, GWL_EXSTYLE, cur | WS_EX_LAYERED | WS_EX_TRANSPARENT)
-            else:
-                ctypes.windll.user32.SetWindowLongW(
-                    hwnd, GWL_EXSTYLE, cur & ~WS_EX_TRANSPARENT)
-        except Exception as e:
-            print(f"[click-through] {e}")
+            if not hwnd: return
+            GWL   = -20; L = 0x00080000; T = 0x00000020
+            cur   = ctypes.windll.user32.GetWindowLongW(hwnd, GWL)
+            ctypes.windll.user32.SetWindowLongW(
+                hwnd, GWL, (cur | L | T) if self.through_var.get() else (cur & ~T))
+        except Exception as e: print(f"[through] {e}")
 
     # ═══════════════════════════════════════════════════════════════
-    # Window Drag / Resize
+    # Window drag
     # ═══════════════════════════════════════════════════════════════
 
-    def _drag_start(self, event):
-        self._dx, self._dy = event.x, event.y
-
-    def _drag_move(self, event):
-        if self.lock_var.get():
-            return
-        x = self.root.winfo_x() + (event.x - self._dx)
-        y = self.root.winfo_y() + (event.y - self._dy)
-        self.root.geometry(f"+{x}+{y}")
-
-    def _resize_start(self, event):
-        self._rx, self._ry = event.x_root, event.y_root
-        self._rw = self.root.winfo_width()
-        self._rh = self.root.winfo_height()
-
-    def _resize_drag(self, event):
-        nw = max(500, self._rw + (event.x_root - self._rx))
-        nh = max(360, self._rh + (event.y_root - self._ry))
-        self.root.geometry(f"{nw}x{nh}")
+    def _drag_start(self, e): self._dx, self._dy = e.x, e.y
+    def _drag_move(self, e):
+        if self.lock_var.get(): return
+        self.root.geometry(
+            f"+{self.root.winfo_x()+(e.x-self._dx)}"
+            f"+{self.root.winfo_y()+(e.y-self._dy)}")
 
     def _minimize(self):
-        self.root.overrideredirect(False)
-        self.root.iconify()
-        self.root.bind("<Map>", self._on_restore)
+        self.root.overrideredirect(False); self.root.iconify()
+        self.root.bind("<Map>", self._restore)
 
-    def _on_restore(self, _=None):
+    def _restore(self, _=None):
         self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-        self.root.unbind("<Map>")
+        self.root.attributes("-topmost", True); self.root.unbind("<Map>")
 
     # ═══════════════════════════════════════════════════════════════
-    # Utility Actions
+    # Utility
     # ═══════════════════════════════════════════════════════════════
 
     def _fit_image(self):
-        if self.image_original is None:
-            return
-        cw = self.canvas.winfo_width()
-        ch = self.canvas.winfo_height()
+        if not self.image_original: return
+        cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
         iw, ih = self.image_original.size
-        if iw > 0 and ih > 0:
-            ratio = min(cw / iw, ch / ih) * 100
-            self.scale_var.set(int(max(5, min(400, ratio))))
-            self.scale_lbl.configure(text=f"{self.scale_var.get()}%")
-        self.pan_x = 0
-        self.pan_y = 0
-        self.update_display()
+        v = max(5, min(400, int(min(cw/iw, ch/ih) * 100)))
+        self.scale_var.set(v); self.scale_lbl.configure(text=f"{v}%")
+        self.pan_x = self.pan_y = 0; self.update_display()
 
     def _reset_scale(self):
-        self.scale_var.set(100)
-        self.scale_lbl.configure(text="100%")
-        self.pan_x = 0
-        self.pan_y = 0
-        self.update_display()
+        self.scale_var.set(100); self.scale_lbl.configure(text="100%")
+        self.pan_x = self.pan_y = 0; self.update_display()
 
     def _reset_view(self):
-        self.pan_x = 0
-        self.pan_y = 0
-        self._redraw_canvas()
+        self.pan_x = self.pan_y = 0; self._redraw()
 
     def _pick_grid_color(self):
-        color = colorchooser.askcolor(color=self.grid_color, title="Grid Color")[1]
-        if color:
-            self.grid_color = color
-            self.grid_color_lbl.configure(bg=color)
-            if self.grid_var.get():
-                self.update_display()
+        col = colorchooser.askcolor(color=self.grid_color, title="Grid Color")[1]
+        if col:
+            self.grid_color = col; self.grid_sw.configure(bg=col)
+            if self.grid_var.get(): self.update_display()
 
-    def _adjust_scale(self, delta: int):
-        new_val = max(5, min(400, self.scale_var.get() + delta))
-        self.scale_var.set(new_val)
-        self.scale_lbl.configure(text=f"{new_val}%")
+    def _adj_scale(self, d):
+        v = max(5, min(400, int(self.scale_var.get()) + d))
+        self.scale_var.set(v); self.scale_lbl.configure(text=f"{v}%")
         self.update_display()
 
     def _toggle_controls(self):
-        self.controls_visible = not self.controls_visible
-        if self.controls_visible:
+        self.controls_vis = not self.controls_vis
+        if self.controls_vis:
             self.ctrl_section.pack(fill="x", before=self.canvas)
         else:
             self.ctrl_section.pack_forget()
 
     # ═══════════════════════════════════════════════════════════════
-    # Keyboard Shortcuts
+    # Keys
     # ═══════════════════════════════════════════════════════════════
 
     def _bind_keys(self):
@@ -709,111 +652,60 @@ class VinylTraceOverlay:
         self.root.bind("<F2>",            lambda _: self._toggle_through())
         self.root.bind("<F3>",            lambda _: self._toggle_grid())
         self.root.bind("<F11>",           lambda _: self._toggle_fullscreen())
-        self.root.bind("<Control-equal>", lambda _: self._adjust_scale(10))
-        self.root.bind("<Control-plus>",  lambda _: self._adjust_scale(10))
-        self.root.bind("<Control-minus>", lambda _: self._adjust_scale(-10))
-        self.root.bind("<Escape>",        self._on_escape)
-
-    def _on_escape(self, _=None):
-        if self.is_fullscreen:
-            self._toggle_fullscreen()
-        else:
-            self.root.quit()
+        self.root.bind("<Control-equal>", lambda _: self._adj_scale(10))
+        self.root.bind("<Control-plus>",  lambda _: self._adj_scale(10))
+        self.root.bind("<Control-minus>", lambda _: self._adj_scale(-10))
+        self.root.bind("<Escape>",
+            lambda _: self._toggle_fullscreen() if self.is_fs else self.root.quit())
 
     # ═══════════════════════════════════════════════════════════════
-    # Widget Factories
+    # Widget factories
     # ═══════════════════════════════════════════════════════════════
 
-    def _accent_btn(self, parent, text: str, cmd) -> tk.Label:
-        btn = tk.Label(
-            parent, text=f"  {text}  ",
-            bg=self.c("accent"), fg="white",
-            font=("Segoe UI", 9, "bold"),
-            cursor="hand2", pady=5
-        )
-        btn.bind("<Enter>",    lambda _: btn.configure(bg=self.c("accent_dim")))
-        btn.bind("<Leave>",    lambda _: btn.configure(bg=self.c("accent")))
-        btn.bind("<Button-1>", lambda _: cmd())
-        return btn
+    def _accent_btn(self, parent, text, cmd):
+        b = tk.Label(parent, text=f"  {text}  ", bg=self.c("accent"), fg="white",
+                     font=("Segoe UI", 9, "bold"), cursor="hand2", pady=5)
+        b.bind("<Enter>",    lambda _: b.configure(bg=self.c("accent_dim")))
+        b.bind("<Leave>",    lambda _: b.configure(bg=self.c("accent")))
+        b.bind("<Button-1>", lambda _: cmd()); return b
 
-    def _flat_btn(self, parent, text: str, cmd) -> tk.Label:
-        btn = tk.Label(
-            parent, text=f"  {text}  ",
-            bg=self.c("bg_btn"), fg=self.c("text"),
-            font=("Segoe UI", 9),
-            cursor="hand2", pady=4
-        )
-        btn.bind("<Enter>",    lambda _: btn.configure(bg=self.c("bg_btn_hover")))
-        btn.bind("<Leave>",    lambda _: btn.configure(bg=self.c("bg_btn")))
-        btn.bind("<Button-1>", lambda _: cmd())
-        return btn
+    def _flat_btn(self, parent, text, cmd):
+        b = tk.Label(parent, text=f"  {text}  ", bg=self.c("bg_btn"), fg=self.c("text"),
+                     font=("Segoe UI", 9), cursor="hand2", pady=4)
+        b.bind("<Enter>",    lambda _: b.configure(bg=self.c("bg_btn_hover")))
+        b.bind("<Leave>",    lambda _: b.configure(bg=self.c("bg_btn")))
+        b.bind("<Button-1>", lambda _: cmd()); return b
 
-    def _toggle_btn(self, parent, text: str, cmd) -> tk.Label:
-        btn = tk.Label(
-            parent, text=f"  {text}  ",
-            bg=self.c("bg_btn"), fg=self.c("text_muted"),
-            font=("Segoe UI", 9),
-            cursor="hand2", pady=4
-        )
-        btn._active = False
-        btn.pack(side="left", padx=(0, 5))
+    def _toggle_btn(self, parent, text, cmd):
+        b = tk.Label(parent, text=f"  {text}  ", bg=self.c("bg_btn"),
+                     fg=self.c("text_muted"), font=("Segoe UI", 9),
+                     cursor="hand2", pady=4)
+        b._active = False
+        b.pack(side="left", padx=(0, 5))
+        b.bind("<Enter>",
+               lambda _: b.configure(bg=self.c("bg_btn_hover")) if not b._active else None)
+        b.bind("<Leave>",
+               lambda _: b.configure(bg=self.c("bg_btn"))       if not b._active else None)
+        b.bind("<Button-1>", lambda _: cmd()); return b
 
-        def _click():
-            cmd()
+    def _set_toggle(self, b, active):
+        b._active = active
+        b.configure(bg=self.c("accent") if active else self.c("bg_btn"),
+                    fg="white"          if active else self.c("text_muted"))
 
-        def _enter(_):
-            if not btn._active:
-                btn.configure(bg=self.c("bg_btn_hover"))
-
-        def _leave(_):
-            if not btn._active:
-                btn.configure(bg=self.c("bg_btn"))
-
-        btn.bind("<Enter>",    _enter)
-        btn.bind("<Leave>",    _leave)
-        btn.bind("<Button-1>", lambda _: _click())
-        return btn
-
-    def _set_toggle(self, btn: tk.Label, active: bool):
-        btn._active = active
-        if active:
-            btn.configure(bg=self.c("accent"), fg="white")
-        else:
-            btn.configure(bg=self.c("bg_btn"), fg=self.c("text_muted"))
-
-    def _scale_kw(self) -> dict:
-        return dict(
-            bg=self.c("bg_panel"), fg=self.c("text"),
-            highlightthickness=0,
-            troughcolor=self.c("bg_input"),
-            activebackground=self.c("accent"),
-            showvalue=False,
-            bd=0,
-        )
-
-    def _style_combobox(self):
+    def _style_cb(self):
         s = ttk.Style()
-        try:
-            s.theme_use("clam")
-        except Exception:
-            pass
-        s.configure(
-            "TCombobox",
-            fieldbackground=self.c("bg_input"),
-            background=self.c("bg_input"),
-            foreground=self.c("text"),
-            selectbackground=self.c("bg_input"),
-            selectforeground=self.c("text"),
-            arrowcolor=self.c("text_muted"),
-            borderwidth=0,
-        )
-        s.map(
-            "TCombobox",
-            fieldbackground=[("readonly", self.c("bg_input"))],
-            background=[("readonly", self.c("bg_input"))],
-        )
+        try: s.theme_use("clam")
+        except Exception: pass
+        s.configure("TCombobox",
+                    fieldbackground=self.c("bg_input"), background=self.c("bg_input"),
+                    foreground=self.c("text"), selectbackground=self.c("bg_input"),
+                    selectforeground=self.c("text"), arrowcolor=self.c("text_muted"),
+                    borderwidth=0)
+        s.map("TCombobox",
+              fieldbackground=[("readonly", self.c("bg_input"))],
+              background=[("readonly", self.c("bg_input"))])
 
 
-# ═══════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     VinylTraceOverlay()
