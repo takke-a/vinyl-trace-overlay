@@ -145,6 +145,10 @@ class VinylTraceOverlay:
         self._rs_wx0 = self._rs_wy0 = 0
         self._dx = self._dy = 0
         self._hwnd = None
+        self._hsb_locked = False
+        self._last_H = self._last_S = self._last_B = 0
+        self._last_rgb = (0, 0, 0)
+        self.color_fmt_var = tk.StringVar(value="HSB")
 
         self._setup_window()
         self._build_ui()
@@ -406,6 +410,37 @@ class VinylTraceOverlay:
                  bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)
                  ).pack(side="right")
 
+        # Row 6 — FH6 HSB カラーサンプラー
+        tk.Frame(parent, bg=self.c("separator"), height=1).pack(fill="x", pady=(8, 6))
+        r6 = tk.Frame(parent, bg=BG)
+        r6.pack(fill="x", pady=(0, 2))
+
+        tk.Label(r6, text="FH6", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9), width=4, anchor="w").pack(side="left")
+
+        self.hsb_sw = tk.Frame(r6, width=26, height=26, bg="#333333", cursor="hand2")
+        self.hsb_sw.pack_propagate(False)
+        self.hsb_sw.pack(side="left", padx=(0, 8))
+        self.hsb_sw.bind("<Button-1>", self._copy_hsb)
+
+        self._style_cb_small()
+        fmt_cb = ttk.Combobox(r6, textvariable=self.color_fmt_var, width=5,
+                              state="readonly", values=["HSB", "RGB"],
+                              style="Small.TCombobox")
+        fmt_cb.pack(side="left", padx=(0, 8))
+        fmt_cb.bind("<<ComboboxSelected>>", lambda _: self._update_color_panel())
+
+        self.hsb_h_var = tk.StringVar(value="H  —°")
+        self.hsb_s_var = tk.StringVar(value="S  —%")
+        self.hsb_b_var = tk.StringVar(value="B  —%")
+        for var in (self.hsb_h_var, self.hsb_s_var, self.hsb_b_var):
+            tk.Label(r6, textvariable=var, bg=BG, fg=self.c("text"),
+                     font=("Consolas", 10, "bold"), width=7, anchor="w"
+                     ).pack(side="left", padx=(0, 4))
+
+        self._flat_btn(r6, "Copy", self._copy_hsb).pack(side="left", padx=(4, 5))
+        self.btn_hsb_lock = self._toggle_btn(r6, "Lock  [F5]", self._toggle_hsb_lock)
+
     # ── Canvas ─────────────────────────────────────────────────────
 
     def _build_canvas(self):
@@ -652,8 +687,13 @@ class VinylTraceOverlay:
                 self.status_var.set(
                     f"x:{px:4}  y:{py:4}  |  "
                     f"RGB({r:3},{g:3},{b:3})  |  {hx}  |  "
-                    f"HSB({H}°,{S}%,{B}%)  |  click swatch to copy"
+                    f"HSB({H}°,{S}%,{B}%)  |  click swatch: copy hex"
                 )
+                if not self._hsb_locked:
+                    self._last_H, self._last_S, self._last_B = H, S, B
+                    self._last_rgb = (r, g, b)
+                    self.hsb_sw.configure(bg=hx)
+                    self._update_color_panel()
             except Exception: pass
 
     def _on_canvas_click(self, _):
@@ -847,7 +887,36 @@ class VinylTraceOverlay:
     def _copy_hex(self, _=None):
         self.root.clipboard_clear()
         self.root.clipboard_append(self._last_hex)
-        self.status_var.set(f"Copied: {self._last_hex}")
+        self.status_var.set(f"Copied hex: {self._last_hex}")
+
+    def _update_color_panel(self):
+        fmt = self.color_fmt_var.get()
+        if fmt == "HSB":
+            self.hsb_h_var.set(f"H {self._last_H:3}°")
+            self.hsb_s_var.set(f"S {self._last_S:3}%")
+            self.hsb_b_var.set(f"B {self._last_B:3}%")
+        else:
+            rv, gv, bv = self._last_rgb
+            self.hsb_h_var.set(f"R {rv:3} ")
+            self.hsb_s_var.set(f"G {gv:3} ")
+            self.hsb_b_var.set(f"B {bv:3} ")
+
+    def _copy_hsb(self, _=None):
+        fmt = self.color_fmt_var.get()
+        if fmt == "HSB":
+            text  = f"{self._last_H} {self._last_S} {self._last_B}"
+            label = f"{self._last_H}°  {self._last_S}%  {self._last_B}%"
+        else:
+            rv, gv, bv = self._last_rgb
+            text  = f"{rv} {gv} {bv}"
+            label = f"R:{rv}  G:{gv}  B:{bv}"
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status_var.set(f"Copied {fmt}: {label}")
+
+    def _toggle_hsb_lock(self):
+        self._hsb_locked = not self._hsb_locked
+        self._set_toggle(self.btn_hsb_lock, self._hsb_locked)
 
     # ═══════════════════════════════════════════════════════════════
     # Keys
@@ -859,6 +928,7 @@ class VinylTraceOverlay:
         self.root.bind("<F2>",            lambda _: self._toggle_through())
         self.root.bind("<F3>",            lambda _: self._toggle_grid())
         self.root.bind("<F4>",            lambda _: self._toggle_light_bg())
+        self.root.bind("<F5>",            lambda _: self._toggle_hsb_lock())
         self.root.bind("<F11>",           lambda _: self._toggle_fullscreen())
         self.root.bind("<Control-equal>", lambda _: self._adj_scale(10))
         self.root.bind("<Control-plus>",  lambda _: self._adj_scale(10))
