@@ -948,6 +948,7 @@ class VinylTraceOverlay:
         self.root.bind("<F3>",            lambda _: self._toggle_grid())
         self.root.bind("<F4>",            lambda _: self._toggle_light_bg())
         self.root.bind("<F5>",            lambda _: self._toggle_hsb_lock())
+        self.root.bind("<Control-c>",     lambda _: self._copy_hsb())
         self.root.bind("<F11>",           lambda _: self._toggle_fullscreen())
         self.root.bind("<Control-equal>", lambda _: self._adj_scale(10))
         self.root.bind("<Control-plus>",  lambda _: self._adj_scale(10))
