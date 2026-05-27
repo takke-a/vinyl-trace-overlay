@@ -948,13 +948,26 @@ class VinylTraceOverlay:
     # ═══════════════════════════════════════════════════════════════
 
     def _drag_start(self, e):
-        # ドラッグ開始時に「ウィンドウ左上 - マウス絶対座標」のオフセットを一度だけ記録
+        if self.lock_var.get(): return
         self._dx = self.root.winfo_x() - e.x_root
         self._dy = self.root.winfo_y() - e.y_root
+        if IS_WINDOWS and self._hwnd:
+            # イベントハンドラ内からの同期呼び出しはクラッシュするため 1ms 遅延して呼ぶ
+            self._native_drag_pending = True
+            self.root.after(1, self._start_native_drag)
+        else:
+            self._native_drag_pending = False
+
+    def _start_native_drag(self):
+        # イベントハンドラ外から呼ぶことで WM_NCLBUTTONDOWN の再入を回避
+        ctypes.windll.user32.ReleaseCapture()
+        ctypes.windll.user32.SendMessageW(self._hwnd, 0x00A1, 2, 0)
+        self._native_drag_pending = False
 
     def _drag_move(self, e):
         if self.lock_var.get(): return
-        # 画面絶対座標を使うので毎フレームの winfo_x/y 問い合わせが不要
+        if getattr(self, "_native_drag_pending", False): return
+        if IS_WINDOWS and self._hwnd: return  # ネイティブドラッグが処理中
         self.root.geometry(f"+{e.x_root + self._dx}+{e.y_root + self._dy}")
 
     def _minimize(self):
