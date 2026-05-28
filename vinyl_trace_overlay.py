@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vinyl Trace Overlay  v3.2"""
 
-import sys, os, ctypes, json, re, tkinter as tk
+import sys, os, ctypes, json, re, tkinter as tk, threading, base64, io
 from tkinter import ttk, filedialog, colorchooser, messagebox
 from PIL import Image, ImageTk, ImageFilter, ImageOps, ImageEnhance, ImageDraw
 
@@ -188,6 +188,8 @@ class VinylTraceOverlay:
         self.color_fmt_var = tk.StringVar(value="HSB")
         self._keybindings = dict(self.DEFAULT_KEYS)
         self._rebinding_action = None
+        self._api_key = ""
+        self._ai_busy = False
 
         self._setup_window()
         self._load_settings()
@@ -458,6 +460,25 @@ class VinylTraceOverlay:
         tk.Frame(inner, bg=self.c("separator"), height=1).pack(fill="x", pady=(8, 6))
         self._flat_btn(inner, "Reset to Defaults", self._reset_keys).pack(anchor="e")
 
+        # AI設定
+        tk.Frame(inner, bg=self.c("separator"), height=1).pack(fill="x", pady=(12, 8))
+        tk.Label(inner, text="AI Suggest", bg=BG, fg=self.c("text"),
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 6))
+        api_row = tk.Frame(inner, bg=BG)
+        api_row.pack(fill="x")
+        tk.Label(api_row, text="API Key", width=10, anchor="w", bg=BG,
+                 fg=self.c("text_muted"), font=("Segoe UI", 9)).pack(side="left")
+        self._api_key_var = tk.StringVar(value=self._api_key)
+        api_entry = tk.Entry(api_row, textvariable=self._api_key_var,
+                             show="*", width=36,
+                             bg=self.c("bg_input"), fg=self.c("text"),
+                             insertbackground=self.c("text"),
+                             highlightthickness=1, highlightcolor=self.c("accent"),
+                             highlightbackground=self.c("separator"),
+                             relief="flat", font=("Segoe UI", 9))
+        api_entry.pack(side="left", padx=(0, 6))
+        self._flat_btn(api_row, "Save", self._save_api_key).pack(side="left")
+
     # ── Controls ───────────────────────────────────────────────────
 
     def _build_controls(self, parent):
@@ -471,6 +492,7 @@ class VinylTraceOverlay:
         self.lbl_image_path = tk.Label(r1, text="", bg=BG, fg=self.c("text_muted"),
                                        font=("Segoe UI", 8))
         self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
+        self._flat_btn(r1, "AI Suggest", self._ai_suggest).pack(side="right")
 
         # Row 2 — Opacity + Mode
         r2 = tk.Frame(parent, bg=BG)
@@ -603,6 +625,7 @@ class VinylTraceOverlay:
         self.lbl_image_path = tk.Label(r1, text="", bg=BG,
                                        fg=self.c("text_muted"), font=("Segoe UI", 7))
         self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
+        self._flat_btn(r1, "AI", self._ai_suggest).pack(side="right")
 
         tk.Label(r1, text="Op", bg=BG, fg=self.c("text_muted"),
                  font=("Segoe UI", 8)).pack(side="left", padx=(0, 2))
@@ -719,6 +742,7 @@ class VinylTraceOverlay:
         self.lbl_image_path = tk.Label(r1, text="", bg=BG, fg=self.c("text_muted"),
                                        font=("Segoe UI", 8))
         self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
+        self._flat_btn(r1, "AI", self._ai_suggest).pack(side="right")
 
         tk.Label(r1, text="Opacity", bg=BG, fg=self.c("text_muted"),
                  font=("Segoe UI", 9)).pack(side="left", padx=(0, 3))
@@ -830,6 +854,7 @@ class VinylTraceOverlay:
         self.lbl_image_path = tk.Label(r1, text="", bg=BG, fg=self.c("text_muted"),
                                        font=("Segoe UI", 8))
         self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
+        self._flat_btn(r1, "AI", self._ai_suggest).pack(side="right")
         tk.Frame(r1, bg=BG, width=8).pack(side="left")
         tk.Label(r1, text="Opacity", bg=BG, fg=self.c("text_muted"),
                  font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
@@ -944,6 +969,7 @@ class VinylTraceOverlay:
         self.lbl_image_path = tk.Label(r1, text="", bg=BG, fg=self.c("text_muted"),
                                        font=("Segoe UI", 8))
         self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
+        self._flat_btn(r1, "AI Suggest", self._ai_suggest).pack(side="right")
 
         # Row 2: Opacity + Mode
         r2 = tk.Frame(parent, bg=BG)
@@ -1610,16 +1636,23 @@ class VinylTraceOverlay:
                 for action, key in data.get("keybindings", {}).items():
                     if action in self._keybindings:
                         self._keybindings[action] = key
+                self._api_key = data.get("api_key", "")
         except Exception:
             pass
 
     def _save_settings(self):
         try:
             with open(self._settings_path(), "w", encoding="utf-8") as f:
-                json.dump({"keybindings": dict(self._keybindings)}, f,
+                json.dump({"keybindings": dict(self._keybindings),
+                           "api_key": self._api_key}, f,
                           indent=2, ensure_ascii=False)
         except Exception:
             pass
+
+    def _save_api_key(self):
+        self._api_key = self._api_key_var.get().strip()
+        self._save_settings()
+        self.status_var.set("API Key を保存しました")
 
     def _fmt_key(self, tk_key):
         sym_map = {
@@ -1798,6 +1831,109 @@ class VinylTraceOverlay:
         s.map("Small.TCombobox",
               fieldbackground=[("readonly", self.c("bg_input"))],
               background=[("readonly", self.c("bg_input"))])
+
+    # ═══════════════════════════════════════════════════════════════
+    # AI Suggest
+    # ═══════════════════════════════════════════════════════════════
+
+    def _ai_suggest(self):
+        if not self.image_original:
+            messagebox.showinfo("AI Suggest", "先に画像を開いてください。")
+            return
+        if not self._api_key:
+            messagebox.showinfo("AI Suggest",
+                "Settings タブで Anthropic API Key を設定してください。")
+            return
+        if self._ai_busy:
+            return
+        self._ai_busy = True
+        self.status_var.set("AI が分析中... しばらくお待ちください")
+        threading.Thread(target=self._ai_suggest_thread, daemon=True).start()
+
+    def _ai_suggest_thread(self):
+        try:
+            import anthropic
+            buf = io.BytesIO()
+            img = self.image_original.convert("RGB")
+            img.thumbnail((1024, 1024), Image.LANCZOS)
+            img.save(buf, format="JPEG", quality=85)
+            b64 = base64.standard_b64encode(buf.getvalue()).decode()
+
+            prompt = (
+                "あなたはForza Horizon 6のバイナルエディター専門家です。\n"
+                "この参照画像を見て、FH6バイナルエディターで再現するためのパーツ配置を提案してください。\n\n"
+                "【FH6バイナルエディターの仕様】\n"
+                "- キャンバス中心が原点(0, 0)、範囲は-1.0〜1.0\n"
+                "- 使えるパーツ: 円、楕円、四角、長方形、三角、星、ハート、矢印、稲妻、その他カスタム形状\n"
+                "- 色はHSB形式で各値0.00〜1.00\n"
+                "- 最大3000レイヤー（少ないほど良い）\n\n"
+                "【出力形式】各パーツを以下の形式で記述してください:\n"
+                "No. [形状] pos(x, y) size(w, h) rot(度) color(H S B) opacity(0.0-1.0)\n"
+                "→ 説明: どの部位/何を表現するか\n\n"
+                "重要度の高い部分から優先して、最大20パーツ提案してください。"
+            )
+
+            client = anthropic.Anthropic(api_key=self._api_key)
+            message = client.messages.create(
+                model="claude-opus-4-7",
+                max_tokens=2048,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image",
+                         "source": {"type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": b64}},
+                        {"type": "text", "text": prompt}
+                    ]
+                }]
+            )
+            result = message.content[0].text
+            self.root.after(0, lambda: self._show_ai_result(result))
+        except Exception as e:
+            self.root.after(0, lambda: self._ai_error(str(e)))
+        finally:
+            self._ai_busy = False
+
+    def _show_ai_result(self, text):
+        self.status_var.set("AI 分析完了")
+        win = tk.Toplevel(self.root)
+        win.title("AI Suggest — バイナル配置提案")
+        win.configure(bg=self.c("bg_dark"))
+        win.geometry("680x520")
+        win.attributes("-topmost", True)
+
+        tk.Label(win, text="AI バイナル配置提案",
+                 bg=self.c("bg_dark"), fg=self.c("text"),
+                 font=("Segoe UI", 11, "bold")).pack(pady=(12, 6))
+
+        frame = tk.Frame(win, bg=self.c("bg_dark"))
+        frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+        sb = tk.Scrollbar(frame)
+        sb.pack(side="right", fill="y")
+        txt = tk.Text(frame, bg=self.c("bg_input"), fg=self.c("text"),
+                      font=("Consolas", 9), wrap="word",
+                      yscrollcommand=sb.set, relief="flat",
+                      padx=10, pady=10)
+        txt.pack(fill="both", expand=True)
+        sb.config(command=txt.yview)
+        txt.insert("1.0", text)
+        txt.config(state="disabled")
+
+        btn_row = tk.Frame(win, bg=self.c("bg_dark"))
+        btn_row.pack(pady=(0, 12))
+        def copy_all():
+            win.clipboard_clear()
+            win.clipboard_append(text)
+            self.status_var.set("AI提案をコピーしました")
+        self._flat_btn(btn_row, "全てコピー", copy_all).pack(side="left", padx=(0, 8))
+        self._flat_btn(btn_row, "閉じる", win.destroy).pack(side="left")
+
+    def _ai_error(self, msg):
+        self._ai_busy = False
+        self.status_var.set("AI エラー")
+        messagebox.showerror("AI Suggest エラー", msg)
 
 
 if __name__ == "__main__":
