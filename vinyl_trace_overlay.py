@@ -118,7 +118,7 @@ class VinylTraceOverlay:
         "toggle_grid":   "<F3>",
         "light_bg":      "<F4>",
         "hsb_lock":      "<F5>",
-        "peek":          "<F6>",
+        "peek":          "<n>",
         "copy_color":    "<Control-c>",
         "fullscreen":    "<F11>",
         "scale_up":      "<Control-equal>",
@@ -1147,7 +1147,14 @@ class VinylTraceOverlay:
             "F9": 0x78, "F10": 0x79, "F11": 0x7A, "F12": 0x7B,
         }
         m = re.search(r"([A-Za-z0-9]+)>$", tk_key)
-        return vk_map.get(m.group(1)) if m else None
+        if not m:
+            return None
+        sym = m.group(1)
+        if sym in vk_map:
+            return vk_map[sym]
+        if len(sym) == 1 and sym.isalpha():
+            return ord(sym.upper())
+        return None
 
     def _apply_keybinding(self, action):
         handlers = {
