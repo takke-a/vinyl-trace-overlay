@@ -180,6 +180,7 @@ class VinylTraceOverlay:
         self._hwnd = None
         self._ct_hold_count = 0
         self._peeking = False
+        self._pr_y0 = self._pr_h0 = 0
         self._hsb_locked = False
         self._last_H = self._last_S = self._last_B = 0
         self._last_rgb = (0, 0, 0)
@@ -265,6 +266,24 @@ class VinylTraceOverlay:
             nh = max(MIN_H, h - dy); y += h - nh; h = nh
         self.root.geometry(f"{w}x{h}+{x}+{y}")
 
+    # ── Control panel resize ───────────────────────────────────────
+
+    def _init_panel_height(self):
+        self.root.update_idletasks()
+        h = self.ctrl_section.winfo_height()
+        if h > 0:
+            self.ctrl_section.pack_propagate(False)
+            self.ctrl_section.configure(height=h)
+
+    def _panel_resize_start(self, e):
+        self._pr_y0 = e.y_root
+        self._pr_h0 = self.ctrl_section.winfo_height()
+
+    def _panel_resize_drag(self, e):
+        dy  = e.y_root - self._pr_y0
+        new_h = max(30, self._pr_h0 + dy)
+        self.ctrl_section.configure(height=new_h)
+
     # ── UI build ───────────────────────────────────────────────────
 
     def _build_ui(self):
@@ -285,11 +304,18 @@ class VinylTraceOverlay:
         self._tab_frame_settings = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
         self._build_settings(self._tab_frame_settings)
 
-        self._ctrl_sep = tk.Frame(self.ctrl_section, bg=self.c("separator"), height=1)
+        # リサイズハンドル（ctrl_section 外・root の子）
+        self._ctrl_sep = tk.Frame(self.root, bg=self.c("separator"), height=5,
+                                   cursor="sb_v_double_arrow")
         self._ctrl_sep.pack(fill="x")
+        self._ctrl_sep.bind("<Button-1>",  self._panel_resize_start)
+        self._ctrl_sep.bind("<B1-Motion>", self._panel_resize_drag)
 
         self._build_canvas()
         self._build_statusbar()
+
+        # 自然な高さを取得してからリサイズ固定モードへ
+        self.root.after(300, self._init_panel_height)
 
     # ── Title bar ─────────────────────────────────────────────────
 
@@ -368,18 +394,19 @@ class VinylTraceOverlay:
     def _switch_tab(self, tab):
         if tab == "controls":
             self._tab_frame_settings.pack_forget()
-            self._tab_frame_controls.pack(fill="x", before=self._ctrl_sep)
+            self._tab_frame_controls.pack(fill="x")
             self._tab_btn_controls.configure(
                 bg=self.c("accent"), fg="white", font=("Segoe UI", 9, "bold"))
             self._tab_btn_settings.configure(
                 bg=self.c("bg_dark"), fg=self.c("text_muted"), font=("Segoe UI", 9))
         else:
             self._tab_frame_controls.pack_forget()
-            self._tab_frame_settings.pack(fill="x", before=self._ctrl_sep)
+            self._tab_frame_settings.pack(fill="x")
             self._tab_btn_settings.configure(
                 bg=self.c("accent"), fg="white", font=("Segoe UI", 9, "bold"))
             self._tab_btn_controls.configure(
                 bg=self.c("bg_dark"), fg=self.c("text_muted"), font=("Segoe UI", 9))
+        self._init_panel_height()
 
     def _build_settings(self, parent):
         BG = self.c("bg_panel")
