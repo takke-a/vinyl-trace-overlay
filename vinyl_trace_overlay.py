@@ -176,6 +176,7 @@ class VinylTraceOverlay:
         self._dx = self._dy = 0
         self._drag_moved = False
         self._hwnd = None
+        self._ct_hold_count = 0
         self._hsb_locked = False
         self._last_H = self._last_S = self._last_B = 0
         self._last_rgb = (0, 0, 0)
@@ -882,6 +883,8 @@ class VinylTraceOverlay:
             self.root.geometry(f"{sw}x{sh}+0+0")
         elif self._saved_geom:
             self.root.geometry(self._saved_geom)
+        if self.through_var.get():
+            self.root.after(150, self._apply_through)
 
     def _apply_win32_style(self):
         """overrideredirect を使わず Win32 API でタイトルバーだけを削除する。
@@ -926,12 +929,17 @@ class VinylTraceOverlay:
         except Exception as e: print(f"[through] {e}")
 
     def _poll_global_hotkeys(self):
-        """Click-Through ON中はオーバーレイがフォーカスを失うため root.bind が効かない。
-        GetAsyncKeyState でフォーカスに関係なく設定済みのキーを監視して解除できるようにする。"""
-        if IS_WINDOWS and self.through_var.get():
+        """Click-Through ON/OFF に関わらずポーリングし、長押し（500ms）でトグルする。
+        ON中はフォーカスを失うため root.bind が効かないので GetAsyncKeyState を使う。"""
+        if IS_WINDOWS:
             vk = self._get_vk(self._keybindings.get("click_through", "<F2>"))
-            if vk and ctypes.windll.user32.GetAsyncKeyState(vk) & 0x0001:
-                self._toggle_through()
+            if vk:
+                if ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000:
+                    self._ct_hold_count += 1
+                    if self._ct_hold_count == 5:
+                        self._toggle_through()
+                else:
+                    self._ct_hold_count = 0
         self.root.after(100, self._poll_global_hotkeys)
 
     # ═══════════════════════════════════════════════════════════════
