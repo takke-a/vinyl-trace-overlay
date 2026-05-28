@@ -275,7 +275,7 @@ class VinylTraceOverlay:
 
         self._tab_frame_controls = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
         inner = tk.Frame(self._tab_frame_controls, bg=self.c("bg_panel"))
-        inner.pack(fill="x", padx=16, pady=12)
+        inner.pack(fill="x", padx=12, pady=8)
         self._build_controls(inner)
         self._tab_frame_controls.pack(fill="x")
 
@@ -291,7 +291,7 @@ class VinylTraceOverlay:
     # ── Title bar ─────────────────────────────────────────────────
 
     def _build_titlebar(self):
-        bar = tk.Frame(self.root, bg=self.c("titlebar"), height=32)
+        bar = tk.Frame(self.root, bg=self.c("titlebar"), height=26)
         bar.pack(fill="x")
         bar.pack_propagate(False)
         self.titlebar = bar
@@ -318,7 +318,7 @@ class VinylTraceOverlay:
                  ).pack(side="right", padx=8)
 
     def _wbtn(self, parent, kind, cmd):
-        cv = tk.Canvas(parent, width=46, height=32,
+        cv = tk.Canvas(parent, width=40, height=26,
                        bg=self.c("titlebar"), highlightthickness=0, cursor="hand2")
         cv.pack(side="right")
         DANGER = self.c("danger")
@@ -330,7 +330,7 @@ class VinylTraceOverlay:
             bg = (DANGER if kind == "close" else OTHER) if hover else TITLE
             cv.configure(bg=bg)
             fg = "#ffffff" if hover else self.c("text_muted")
-            cx, cy = 23, 16
+            cx, cy = 20, 13
             if kind == "minimize":
                 cv.create_line(cx - 6, cy + 3, cx + 6, cy + 3, fill=fg, width=1)
             elif kind == "maximize":
@@ -403,87 +403,112 @@ class VinylTraceOverlay:
     def _build_controls(self, parent):
         BG = self.c("bg_panel")
 
-        # Row 1 — Open
-        r1 = tk.Frame(parent, bg=BG)
-        r1.pack(fill="x", pady=(0, 10))
-        self._open_btn = self._accent_btn(r1, "Open Image", self.open_image)
-        self._open_btn.pack(side="left")
-        # lbl_image_path と btn_clear は画像読み込み後に _open_btn の右隣へ挿入する
-        self.lbl_image_path = tk.Label(r1, text="", bg=BG, fg=self.c("text_muted"),
-                                       font=("Segoe UI", 8))
-        self.btn_clear = self._flat_btn(r1, "×", self._clear_image)
+        # ── 2カラムコンテナ ────────────────────────────────────────
+        cols = tk.Frame(parent, bg=BG)
+        cols.pack(fill="x", pady=(0, 4))
 
-        # Row 2 — Opacity slider
-        r2 = tk.Frame(parent, bg=BG)
-        r2.pack(fill="x", pady=(0, 6))
-        tk.Label(r2, text="Opacity", width=8, anchor="w", bg=BG,
+        left = tk.Frame(cols, bg=BG)
+        left.pack(side="left", fill="both", expand=True, padx=(0, 8))
+
+        tk.Frame(cols, bg=self.c("separator"), width=1).pack(
+            side="left", fill="y", pady=2)
+
+        right = tk.Frame(cols, bg=BG)
+        right.pack(side="left", fill="both", expand=True, padx=(8, 0))
+
+        # ── 左カラム: Open / Opacity / Scale ──────────────────────
+
+        # L1: Open Image + パス + ×
+        rl1 = tk.Frame(left, bg=BG)
+        rl1.pack(fill="x", pady=(0, 5))
+        self._open_btn = self._accent_btn(rl1, "Open Image", self.open_image)
+        self._open_btn.pack(side="left")
+        self.lbl_image_path = tk.Label(rl1, text="", bg=BG, fg=self.c("text_muted"),
+                                       font=("Segoe UI", 8))
+        self.btn_clear = self._flat_btn(rl1, "×", self._clear_image)
+
+        # L2: Opacity
+        rl2 = tk.Frame(left, bg=BG)
+        rl2.pack(fill="x", pady=(0, 5))
+        tk.Label(rl2, text="Opacity", width=7, anchor="w", bg=BG,
                  fg=self.c("text_muted"), font=("Segoe UI", 9)).pack(side="left")
-        ModernSlider(r2, from_=10, to=100, variable=self.opacity_var,
-                     command=self._on_opacity, width=160,
+        ModernSlider(rl2, from_=10, to=100, variable=self.opacity_var,
+                     command=self._on_opacity, width=140,
                      col_track=self.c("bg_input"), col_fill=self.c("accent")
-                     ).pack(side="left", padx=(0, 8))
-        self.opacity_lbl = tk.Label(r2, text="70%", width=5, anchor="w", bg=BG,
-                                     fg=self.c("text"), font=("Segoe UI", 9, "bold"))
+                     ).pack(side="left", padx=(0, 6))
+        self.opacity_lbl = tk.Label(rl2, text="70%", width=4, anchor="w", bg=BG,
+                                    fg=self.c("text"), font=("Segoe UI", 9, "bold"))
         self.opacity_lbl.pack(side="left")
-        tk.Frame(r2, bg=BG, width=12).pack(side="left")
-        tk.Label(r2, text="Mode", bg=BG, fg=self.c("text_muted"),
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 8))
+
+        # L3: Scale
+        rl3 = tk.Frame(left, bg=BG)
+        rl3.pack(fill="x", pady=(0, 5))
+        tk.Label(rl3, text="Scale", width=7, anchor="w", bg=BG,
+                 fg=self.c("text_muted"), font=("Segoe UI", 9)).pack(side="left")
+        ModernSlider(rl3, from_=5, to=400, variable=self.scale_var,
+                     command=self._on_scale, width=140,
+                     col_track=self.c("bg_input"), col_fill=self.c("accent")
+                     ).pack(side="left", padx=(0, 6))
+        self.scale_lbl = tk.Label(rl3, text="100%", width=5, anchor="w", bg=BG,
+                                   fg=self.c("text"), font=("Segoe UI", 9, "bold"))
+        self.scale_lbl.pack(side="left")
+
+        # L4: Fit / 1:1 / Reset View
+        rl4 = tk.Frame(left, bg=BG)
+        rl4.pack(fill="x")
+        self._flat_btn(rl4, "Fit",        self._fit_image).pack(side="left", padx=(0, 4))
+        self._flat_btn(rl4, "1:1",        self._reset_scale).pack(side="left", padx=(0, 4))
+        self._flat_btn(rl4, "Reset View", self._reset_view).pack(side="left")
+
+        # ── 右カラム: Mode / Toggles / Grid / Layer ───────────────
+
+        # R1: Mode
+        rr1 = tk.Frame(right, bg=BG)
+        rr1.pack(fill="x", pady=(0, 5))
+        tk.Label(rr1, text="Mode", anchor="w", bg=BG,
+                 fg=self.c("text_muted"), font=("Segoe UI", 9)
+                 ).pack(side="left", padx=(0, 6))
         self._style_cb()
-        cb = ttk.Combobox(r2, textvariable=self.mode_var, width=15, state="readonly",
+        cb = ttk.Combobox(rr1, textvariable=self.mode_var, width=13, state="readonly",
                           values=["Normal", "Edge Detect", "Grayscale",
                                   "Invert", "High Contrast", "Soft Glow"])
         cb.pack(side="left")
         cb.bind("<<ComboboxSelected>>", lambda _: self.update_display())
 
-        # Row 3 — Scale slider
-        r3 = tk.Frame(parent, bg=BG)
-        r3.pack(fill="x", pady=(0, 10))
-        tk.Label(r3, text="Scale", width=8, anchor="w", bg=BG,
-                 fg=self.c("text_muted"), font=("Segoe UI", 9)).pack(side="left")
-        ModernSlider(r3, from_=5, to=400, variable=self.scale_var,
-                     command=self._on_scale, width=160,
-                     col_track=self.c("bg_input"), col_fill=self.c("accent")
-                     ).pack(side="left", padx=(0, 8))
-        self.scale_lbl = tk.Label(r3, text="100%", width=6, anchor="w", bg=BG,
-                                   fg=self.c("text"), font=("Segoe UI", 9, "bold"))
-        self.scale_lbl.pack(side="left", padx=(0, 16))
-        self._flat_btn(r3, "Fit",        self._fit_image).pack(side="left", padx=(0, 5))
-        self._flat_btn(r3, "1:1",        self._reset_scale).pack(side="left", padx=(0, 5))
-        self._flat_btn(r3, "Reset View", self._reset_view).pack(side="left")
+        # R2a: Flip H / Flip V / Grid
+        rr2a = tk.Frame(right, bg=BG)
+        rr2a.pack(fill="x", pady=(0, 3))
+        self.btn_mh = self._toggle_btn(rr2a, "Flip H", self._toggle_mirror_h)
+        self.btn_mv = self._toggle_btn(rr2a, "Flip V", self._toggle_mirror_v)
+        self.btn_gr = self._toggle_btn(rr2a, "Grid",   self._toggle_grid)
 
-        # Row 4 — Toggle buttons
-        r4 = tk.Frame(parent, bg=BG)
-        r4.pack(fill="x", pady=(0, 8))
-        self.btn_mh = self._toggle_btn(r4, "Flip H",           self._toggle_mirror_h)
-        self.btn_mv = self._toggle_btn(r4, "Flip V",           self._toggle_mirror_v)
-        self.btn_gr = self._toggle_btn(r4, "Grid  [F3]",       self._toggle_grid)
-        self.btn_ct = self._toggle_btn(r4, "Click-Thru  [F2]", self._toggle_through)
-        self.btn_lk = self._toggle_btn(r4, "Lock Pos",         self._toggle_lock)
-        self.btn_bg = self._toggle_btn(r4, "Light BG  [F4]",   self._toggle_light_bg)
+        # R2b: Click-Thru / Lock / Light BG
+        rr2b = tk.Frame(right, bg=BG)
+        rr2b.pack(fill="x", pady=(0, 5))
+        self.btn_ct = self._toggle_btn(rr2b, "Click-Thru", self._toggle_through)
+        self.btn_lk = self._toggle_btn(rr2b, "Lock Pos",   self._toggle_lock)
+        self.btn_bg = self._toggle_btn(rr2b, "Light BG",   self._toggle_light_bg)
 
-        # Row 5 — Grid settings + layer counter
-        r5 = tk.Frame(parent, bg=BG)
-        r5.pack(fill="x")
-
-        tk.Label(r5, text="Grid", bg=BG, fg=self.c("text_muted"),
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 5))
+        # R3: Grid settings
+        rr3 = tk.Frame(right, bg=BG)
+        rr3.pack(fill="x", pady=(0, 5))
+        tk.Label(rr3, text="Grid", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
         self._style_cb_small()
-        gs_cb = ttk.Combobox(r5, textvariable=self.grid_style_var, width=7,
+        gs_cb = ttk.Combobox(rr3, textvariable=self.grid_style_var, width=6,
                              state="readonly", values=["FH6", "Classic"],
                              style="Small.TCombobox")
-        gs_cb.pack(side="left", padx=(0, 12))
+        gs_cb.pack(side="left", padx=(0, 8))
         gs_cb.bind("<<ComboboxSelected>>", lambda _: self.update_display())
-
-        tk.Label(r5, text="Color", bg=BG, fg=self.c("text_muted"),
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 5))
-        self.grid_sw = tk.Label(r5, width=3, bg=self.grid_color,
+        tk.Label(rr3, text="Col", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 3))
+        self.grid_sw = tk.Label(rr3, width=3, bg=self.grid_color,
                                 cursor="hand2", relief="flat")
-        self.grid_sw.pack(side="left", ipady=5, padx=(0, 12))
+        self.grid_sw.pack(side="left", ipady=5, padx=(0, 8))
         self.grid_sw.bind("<Button-1>", lambda _: self._pick_grid_color())
-
-        tk.Label(r5, text="Size", bg=BG, fg=self.c("text_muted"),
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 5))
-        ent = tk.Entry(r5, textvariable=self.grid_size_var, width=4,
+        tk.Label(rr3, text="Sz", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 3))
+        ent = tk.Entry(rr3, textvariable=self.grid_size_var, width=4,
                        bg=self.c("bg_input"), fg=self.c("text"),
                        insertbackground=self.c("text"),
                        highlightthickness=1, highlightcolor=self.c("accent"),
@@ -492,37 +517,34 @@ class VinylTraceOverlay:
         ent.pack(side="left")
         ent.bind("<Return>",   lambda _: self.update_display())
         ent.bind("<FocusOut>", lambda _: self.update_display())
-        tk.Label(r5, text=" px", bg=BG, fg=self.c("text_muted"),
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 16))
+        tk.Label(rr3, text=" px", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left")
 
-        # Layer counter (tracks 0/3000 limit like in-game)
-        tk.Label(r5, text="Layers", bg=BG, fg=self.c("text_muted"),
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 5))
-        self._flat_btn(r5, "−", self._layer_dec).pack(side="left", padx=(0, 2))
-        self.layer_lbl = tk.Label(r5, textvariable=self.layer_count,
+        # R4: Layer counter
+        rr4 = tk.Frame(right, bg=BG)
+        rr4.pack(fill="x")
+        tk.Label(rr4, text="Layers", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
+        self._flat_btn(rr4, "−", self._layer_dec).pack(side="left", padx=(0, 2))
+        self.layer_lbl = tk.Label(rr4, textvariable=self.layer_count,
                                    width=4, anchor="center",
                                    bg=self.c("bg_input"), fg=self.c("text"),
                                    font=("Consolas", 9, "bold"))
         self.layer_lbl.pack(side="left")
-        tk.Label(r5, text=f"/ {self.LAYER_MAX}", bg=BG, fg=self.c("text_muted"),
+        tk.Label(rr4, text=f"/ {self.LAYER_MAX}", bg=BG, fg=self.c("text_muted"),
                  font=("Segoe UI", 9)).pack(side="left", padx=(2, 2))
-        self._flat_btn(r5, "+", self._layer_inc).pack(side="left", padx=(2, 0))
-        self._flat_btn(r5, "R", self._layer_reset).pack(side="left", padx=(3, 0))
+        self._flat_btn(rr4, "+", self._layer_inc).pack(side="left", padx=(2, 0))
+        self._flat_btn(rr4, "R", self._layer_reset).pack(side="left", padx=(2, 0))
 
-        tk.Label(r5,
-                 text="Scroll: zoom    Right-drag: pan    F1: UI    F11: fullscreen",
-                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)
-                 ).pack(side="right")
-
-        # Row 6 — FH6 HSB カラーサンプラー
-        tk.Frame(parent, bg=self.c("separator"), height=1).pack(fill="x", pady=(8, 6))
+        # ── HSBカラーサンプラー（フルワイド）────────────────────
+        tk.Frame(parent, bg=self.c("separator"), height=1).pack(fill="x", pady=(6, 4))
         r6 = tk.Frame(parent, bg=BG)
         r6.pack(fill="x", pady=(0, 2))
 
         tk.Label(r6, text="FH6", bg=BG, fg=self.c("text_muted"),
                  font=("Segoe UI", 9), width=4, anchor="w").pack(side="left")
 
-        self.hsb_sw = tk.Frame(r6, width=26, height=26, bg="#333333", cursor="hand2")
+        self.hsb_sw = tk.Frame(r6, width=36, height=36, bg="#333333", cursor="hand2")
         self.hsb_sw.pack_propagate(False)
         self.hsb_sw.pack(side="left", padx=(0, 8))
         self.hsb_sw.bind("<Button-1>", self._copy_hsb)
@@ -539,8 +561,8 @@ class VinylTraceOverlay:
         self.hsb_b_var = tk.StringVar(value="B  —%")
         for var in (self.hsb_h_var, self.hsb_s_var, self.hsb_b_var):
             tk.Label(r6, textvariable=var, bg=BG, fg=self.c("text"),
-                     font=("Consolas", 10, "bold"), width=7, anchor="w"
-                     ).pack(side="left", padx=(0, 4))
+                     font=("Consolas", 13, "bold"), width=8, anchor="w"
+                     ).pack(side="left", padx=(0, 6))
 
         self._flat_btn(r6, "Copy", self._copy_hsb).pack(side="left", padx=(4, 5))
         self.btn_hsb_lock = self._toggle_btn(r6, "Lock  [F5]", self._toggle_hsb_lock)
