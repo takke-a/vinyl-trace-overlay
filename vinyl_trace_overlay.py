@@ -579,9 +579,9 @@ class VinylTraceOverlay:
                               style="Small.TCombobox")
         fmt_cb.pack(side="left", padx=(0, 8))
         fmt_cb.bind("<<ComboboxSelected>>", lambda _: self._update_color_panel())
-        self.hsb_h_var = tk.StringVar(value="H  —°")
-        self.hsb_s_var = tk.StringVar(value="S  —%")
-        self.hsb_b_var = tk.StringVar(value="B  —%")
+        self.hsb_h_var = tk.StringVar(value="H  —  ")
+        self.hsb_s_var = tk.StringVar(value="S  —  ")
+        self.hsb_b_var = tk.StringVar(value="B  —  ")
         for var in (self.hsb_h_var, self.hsb_s_var, self.hsb_b_var):
             tk.Label(r6, textvariable=var, bg=BG, fg=self.c("text"),
                      font=("Consolas", 13, "bold"), width=8, anchor="w"
@@ -695,9 +695,9 @@ class VinylTraceOverlay:
                               style="Small.TCombobox")
         fmt_cb.pack(side="left", padx=(0, 4))
         fmt_cb.bind("<<ComboboxSelected>>", lambda _: self._update_color_panel())
-        self.hsb_h_var = tk.StringVar(value="H —°")
-        self.hsb_s_var = tk.StringVar(value="S —%")
-        self.hsb_b_var = tk.StringVar(value="B —%")
+        self.hsb_h_var = tk.StringVar(value="H — ")
+        self.hsb_s_var = tk.StringVar(value="S — ")
+        self.hsb_b_var = tk.StringVar(value="B — ")
         for var in (self.hsb_h_var, self.hsb_s_var, self.hsb_b_var):
             tk.Label(r2, textvariable=var, bg=BG, fg=self.c("text"),
                      font=("Consolas", 9, "bold"), width=7, anchor="w"
@@ -807,9 +807,9 @@ class VinylTraceOverlay:
                               style="Small.TCombobox")
         fmt_cb.pack(side="left", padx=(0, 6))
         fmt_cb.bind("<<ComboboxSelected>>", lambda _: self._update_color_panel())
-        self.hsb_h_var = tk.StringVar(value="H  —°")
-        self.hsb_s_var = tk.StringVar(value="S  —%")
-        self.hsb_b_var = tk.StringVar(value="B  —%")
+        self.hsb_h_var = tk.StringVar(value="H  —  ")
+        self.hsb_s_var = tk.StringVar(value="S  —  ")
+        self.hsb_b_var = tk.StringVar(value="B  —  ")
         for var in (self.hsb_h_var, self.hsb_s_var, self.hsb_b_var):
             tk.Label(r2, textvariable=var, bg=BG, fg=self.c("text"),
                      font=("Consolas", 11, "bold"), width=8, anchor="w"
@@ -921,9 +921,9 @@ class VinylTraceOverlay:
                               style="Small.TCombobox")
         fmt_cb.pack(side="left", padx=(0, 6))
         fmt_cb.bind("<<ComboboxSelected>>", lambda _: self._update_color_panel())
-        self.hsb_h_var = tk.StringVar(value="H  —°")
-        self.hsb_s_var = tk.StringVar(value="S  —%")
-        self.hsb_b_var = tk.StringVar(value="B  —%")
+        self.hsb_h_var = tk.StringVar(value="H  —  ")
+        self.hsb_s_var = tk.StringVar(value="S  —  ")
+        self.hsb_b_var = tk.StringVar(value="B  —  ")
         for var in (self.hsb_h_var, self.hsb_s_var, self.hsb_b_var):
             tk.Label(r3, textvariable=var, bg=BG, fg=self.c("text"),
                      font=("Consolas", 11, "bold"), width=8, anchor="w"
@@ -1043,9 +1043,9 @@ class VinylTraceOverlay:
                               style="Small.TCombobox")
         fmt_cb.pack(side="left", padx=(0, 8))
         fmt_cb.bind("<<ComboboxSelected>>", lambda _: self._update_color_panel())
-        self.hsb_h_var = tk.StringVar(value="H  —°")
-        self.hsb_s_var = tk.StringVar(value="S  —%")
-        self.hsb_b_var = tk.StringVar(value="B  —%")
+        self.hsb_h_var = tk.StringVar(value="H  —  ")
+        self.hsb_s_var = tk.StringVar(value="S  —  ")
+        self.hsb_b_var = tk.StringVar(value="B  —  ")
         for var in (self.hsb_h_var, self.hsb_s_var, self.hsb_b_var):
             tk.Label(r5, textvariable=var, bg=BG, fg=self.c("text"),
                      font=("Consolas", 12, "bold"), width=8, anchor="w"
@@ -1312,10 +1312,13 @@ class VinylTraceOverlay:
                 self._last_hex = hx
                 self.color_sw.configure(bg=hx)
                 H, S, B = self._rgb_to_hsb(r, g, b)
+                hn = round(H / 360, 2)
+                sn = round(S / 100, 2)
+                bn = round(B / 100, 2)
                 self.status_var.set(
                     f"x:{px:4}  y:{py:4}  |  "
                     f"RGB({r:3},{g:3},{b:3})  |  {hx}  |  "
-                    f"HSB({H}°,{S}%,{B}%)  |  click swatch: copy hex"
+                    f"HSB({hn:.2f},{sn:.2f},{bn:.2f})  |  click swatch: copy hex"
                 )
                 if not self._hsb_locked:
                     self._last_H, self._last_S, self._last_B = H, S, B
@@ -1557,9 +1560,12 @@ class VinylTraceOverlay:
     def _update_color_panel(self):
         fmt = self.color_fmt_var.get()
         if fmt == "HSB":
-            self.hsb_h_var.set(f"H {self._last_H:3}°")
-            self.hsb_s_var.set(f"S {self._last_S:3}%")
-            self.hsb_b_var.set(f"B {self._last_B:3}%")
+            hn = round(self._last_H / 360, 2)
+            sn = round(self._last_S / 100, 2)
+            bn = round(self._last_B / 100, 2)
+            self.hsb_h_var.set(f"H {hn:.2f}")
+            self.hsb_s_var.set(f"S {sn:.2f}")
+            self.hsb_b_var.set(f"B {bn:.2f}")
         else:
             rv, gv, bv = self._last_rgb
             self.hsb_h_var.set(f"R {rv:3} ")
@@ -1569,8 +1575,11 @@ class VinylTraceOverlay:
     def _copy_hsb(self, _=None):
         fmt = self.color_fmt_var.get()
         if fmt == "HSB":
-            text  = f"{self._last_H} {self._last_S} {self._last_B}"
-            label = f"{self._last_H}°  {self._last_S}%  {self._last_B}%"
+            hn = round(self._last_H / 360, 2)
+            sn = round(self._last_S / 100, 2)
+            bn = round(self._last_B / 100, 2)
+            text  = f"{hn:.2f} {sn:.2f} {bn:.2f}"
+            label = f"H:{hn:.2f}  S:{sn:.2f}  B:{bn:.2f}"
         else:
             rv, gv, bv = self._last_rgb
             text  = f"{rv} {gv} {bv}"
