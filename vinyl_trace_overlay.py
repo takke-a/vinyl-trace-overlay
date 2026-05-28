@@ -174,6 +174,7 @@ class VinylTraceOverlay:
         self._rs_x0 = self._rs_y0 = self._rs_w0 = self._rs_h0 = 0
         self._rs_wx0 = self._rs_wy0 = 0
         self._dx = self._dy = 0
+        self._drag_moved = False
         self._hwnd = None
         self._hsb_locked = False
         self._last_H = self._last_S = self._last_B = 0
@@ -549,14 +550,16 @@ class VinylTraceOverlay:
         self.canvas = tk.Canvas(self.root, bg=self.c("bg_darkest"),
                                 highlightthickness=0, cursor="crosshair")
         self.canvas.pack(fill="both", expand=True)
-        self.canvas.bind("<Configure>",  lambda _: self.update_display())
-        self.canvas.bind("<Motion>",     self._on_hover)
-        self.canvas.bind("<Button-1>",   self._on_canvas_click)
-        self.canvas.bind("<MouseWheel>", self._on_scroll)
-        self.canvas.bind("<Button-4>",   lambda _: self._adj_scale(5))
-        self.canvas.bind("<Button-5>",   lambda _: self._adj_scale(-5))
-        self.canvas.bind("<Button-3>",   self._pan_start)
-        self.canvas.bind("<B3-Motion>",  self._pan_move)
+        self.canvas.bind("<Configure>",        lambda _: self.update_display())
+        self.canvas.bind("<Motion>",           self._on_hover)
+        self.canvas.bind("<Button-1>",         self._img_press)
+        self.canvas.bind("<B1-Motion>",        self._img_drag)
+        self.canvas.bind("<ButtonRelease-1>",  self._img_release)
+        self.canvas.bind("<MouseWheel>",       self._on_scroll)
+        self.canvas.bind("<Button-4>",         lambda _: self._adj_scale(5))
+        self.canvas.bind("<Button-5>",         lambda _: self._adj_scale(-5))
+        self.canvas.bind("<Button-3>",         self._pan_start)
+        self.canvas.bind("<B3-Motion>",        self._pan_move)
         self.canvas.after(200, self._placeholder)
 
     def _placeholder(self):
@@ -812,11 +815,26 @@ class VinylTraceOverlay:
                     self._update_color_panel()
             except Exception: pass
 
-    def _on_canvas_click(self, _):
-        if not self.image_original: self.open_image()
-
     def _on_scroll(self, event):
         self._adj_scale(10 if event.delta > 0 else -10)
+
+    def _img_press(self, e):
+        self._psx, self._psy = e.x, e.y
+        self._drag_moved = False
+
+    def _img_drag(self, e):
+        if not self.image_original: return
+        if self.lock_var.get(): return
+        dx, dy = e.x - self._psx, e.y - self._psy
+        if abs(dx) > 2 or abs(dy) > 2:
+            self._drag_moved = True
+        self.pan_x += dx; self.pan_y += dy
+        self._psx, self._psy = e.x, e.y
+        self._redraw()
+
+    def _img_release(self, e):
+        if not self._drag_moved and not self.image_original:
+            self.open_image()
 
     def _pan_start(self, e): self._psx, self._psy = e.x, e.y
     def _pan_move(self, e):
