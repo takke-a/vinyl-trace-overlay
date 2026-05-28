@@ -181,7 +181,7 @@ class VinylTraceOverlay:
         self._ct_hold_count = 0
         self._peeking = False
         self._pr_y0 = self._pr_h0 = 0
-        self._compact_mode = False
+        self._compact_mode = True
         self._hsb_locked = False
         self._last_H = self._last_S = self._last_B = 0
         self._last_rgb = (0, 0, 0)
@@ -283,7 +283,7 @@ class VinylTraceOverlay:
     def _panel_resize_drag(self, e):
         dy    = e.y_root - self._pr_y0
         new_h = max(30, self._pr_h0 + dy)
-        compact = new_h < 90
+        compact = new_h < 150
         if compact != self._compact_mode:
             self._compact_mode = compact
             self._rebuild_controls()
