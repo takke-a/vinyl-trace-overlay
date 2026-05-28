@@ -118,6 +118,7 @@ class VinylTraceOverlay:
         "toggle_grid":   "<F3>",
         "light_bg":      "<F4>",
         "hsb_lock":      "<F5>",
+        "peek":          "<F6>",
         "copy_color":    "<Control-c>",
         "fullscreen":    "<F11>",
         "scale_up":      "<Control-equal>",
@@ -133,6 +134,7 @@ class VinylTraceOverlay:
         "toggle_grid":   "Grid",
         "light_bg":      "Light BG",
         "hsb_lock":      "HSB Lock",
+        "peek":          "Peek (Hide)",
         "copy_color":    "Copy Color",
         "fullscreen":    "Fullscreen",
         "scale_up":      "Scale Up",
@@ -177,6 +179,7 @@ class VinylTraceOverlay:
         self._drag_moved = False
         self._hwnd = None
         self._ct_hold_count = 0
+        self._peeking = False
         self._hsb_locked = False
         self._last_H = self._last_S = self._last_B = 0
         self._last_rgb = (0, 0, 0)
@@ -954,14 +957,29 @@ class VinylTraceOverlay:
         """Click-Through ON/OFF に関わらずポーリングし、長押し（500ms）でトグルする。
         ON中はフォーカスを失うため root.bind が効かないので GetAsyncKeyState を使う。"""
         if IS_WINDOWS:
-            vk = self._get_vk(self._keybindings.get("click_through", "<F2>"))
-            if vk:
-                if ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000:
+            # Click-Through 長押しトグル
+            vk_ct = self._get_vk(self._keybindings.get("click_through", "<F2>"))
+            if vk_ct:
+                if ctypes.windll.user32.GetAsyncKeyState(vk_ct) & 0x8000:
                     self._ct_hold_count += 1
                     if self._ct_hold_count == 5:
                         self._toggle_through()
                 else:
                     self._ct_hold_count = 0
+
+            # Peek: 押している間だけ非表示・topmost解除
+            vk_pk = self._get_vk(self._keybindings.get("peek", "<F6>"))
+            if vk_pk:
+                pressing = bool(ctypes.windll.user32.GetAsyncKeyState(vk_pk) & 0x8000)
+                if pressing and not self._peeking:
+                    self._peeking = True
+                    self.root.attributes("-alpha", 0)
+                    self.root.attributes("-topmost", False)
+                elif not pressing and self._peeking:
+                    self._peeking = False
+                    self.root.attributes("-alpha", self.opacity_var.get() / 100)
+                    self.root.attributes("-topmost", True)
+
         self.root.after(100, self._poll_global_hotkeys)
 
     # ═══════════════════════════════════════════════════════════════
