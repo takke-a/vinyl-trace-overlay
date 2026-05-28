@@ -3,6 +3,12 @@
 Forza Horizon 6 のバイナルグループ作成を補助する、参照画像オーバーレイツールです。  
 ゲーム画面の上に半透明の参照画像を重ねて表示することで、バイナルを組み合わせてキャラクターをトレース制作できます。
 
+## ダウンロード
+
+> **[Releases ページから VinylTraceOverlay.exe をダウンロード](https://github.com/takke-a/vinyl-trace-overlay/releases/latest)**
+
+※ このリポジトリをZIPでダウンロードしてもEXEは含まれません。上のリンクからダウンロードしてください。
+
 ---
 
 ## 動作環境
