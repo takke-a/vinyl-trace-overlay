@@ -540,6 +540,8 @@ class VinylTraceOverlay:
         self.btn_mv = self._toggle_btn(r4, "Flip V",     self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r4, "Grid",       self._toggle_grid)
         self.btn_ct = self._toggle_btn(r4, "Click-Thru", self._toggle_through)
+        tk.Label(r4, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
+                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)).pack(side="left", padx=(2, 6))
         self.btn_lk = self._toggle_btn(r4, "Lock Pos",   self._toggle_lock)
         self.btn_bg = self._toggle_btn(r4, "Light BG",   self._toggle_light_bg)
 
@@ -662,6 +664,8 @@ class VinylTraceOverlay:
         self.btn_mv = self._toggle_btn(r1, "V",   self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r1, "Grid", self._toggle_grid)
         self.btn_ct = self._toggle_btn(r1, "CT",   self._toggle_through)
+        tk.Label(r1, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
+                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 7)).pack(side="left", padx=(1, 4))
         self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
         self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
 
@@ -779,6 +783,8 @@ class VinylTraceOverlay:
         self.btn_mv = self._toggle_btn(r1, "V",   self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r1, "Grid", self._toggle_grid)
         self.btn_ct = self._toggle_btn(r1, "CT",   self._toggle_through)
+        tk.Label(r1, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
+                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 7)).pack(side="left", padx=(1, 4))
         self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
         self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
 
@@ -894,6 +900,8 @@ class VinylTraceOverlay:
         self.btn_mv = self._toggle_btn(r2, "Flip V",     self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r2, "Grid",       self._toggle_grid)
         self.btn_ct = self._toggle_btn(r2, "Click-Thru", self._toggle_through)
+        tk.Label(r2, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
+                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)).pack(side="left", padx=(2, 6))
         self.btn_lk = self._toggle_btn(r2, "Lock Pos",   self._toggle_lock)
         self.btn_bg = self._toggle_btn(r2, "Light BG",   self._toggle_light_bg)
 
@@ -1017,6 +1025,8 @@ class VinylTraceOverlay:
         self.btn_mv = self._toggle_btn(r4, "Flip V",     self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r4, "Grid",       self._toggle_grid)
         self.btn_ct = self._toggle_btn(r4, "Click-Thru", self._toggle_through)
+        tk.Label(r4, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
+                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)).pack(side="left", padx=(2, 6))
         self.btn_lk = self._toggle_btn(r4, "Lock Pos",   self._toggle_lock)
         self.btn_bg = self._toggle_btn(r4, "Light BG",   self._toggle_light_bg)
 
