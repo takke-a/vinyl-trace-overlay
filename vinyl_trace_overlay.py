@@ -539,9 +539,9 @@ class VinylTraceOverlay:
         self.btn_mh = self._toggle_btn(r4, "Flip H",     self._toggle_mirror_h)
         self.btn_mv = self._toggle_btn(r4, "Flip V",     self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r4, "Grid",       self._toggle_grid)
-        self.btn_ct = self._toggle_btn(r4, "Click-Thru", self._toggle_through)
-        tk.Label(r4, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
-                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)).pack(side="left", padx=(2, 6))
+        self.btn_ct = self._toggle_btn(
+            r4, f"Click-Thru [{self._fmt_key(self._keybindings.get('click_through', '<F2>'))}]",
+            self._toggle_through)
         self.btn_lk = self._toggle_btn(r4, "Lock Pos",   self._toggle_lock)
         self.btn_bg = self._toggle_btn(r4, "Light BG",   self._toggle_light_bg)
 
@@ -663,9 +663,9 @@ class VinylTraceOverlay:
         self.btn_mh = self._toggle_btn(r1, "H",   self._toggle_mirror_h)
         self.btn_mv = self._toggle_btn(r1, "V",   self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r1, "Grid", self._toggle_grid)
-        self.btn_ct = self._toggle_btn(r1, "CT",   self._toggle_through)
-        tk.Label(r1, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
-                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 7)).pack(side="left", padx=(1, 4))
+        self.btn_ct = self._toggle_btn(
+            r1, f"CT[{self._fmt_key(self._keybindings.get('click_through', '<F2>'))}]",
+            self._toggle_through)
         self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
         self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
 
@@ -782,9 +782,9 @@ class VinylTraceOverlay:
         self.btn_mh = self._toggle_btn(r1, "H",   self._toggle_mirror_h)
         self.btn_mv = self._toggle_btn(r1, "V",   self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r1, "Grid", self._toggle_grid)
-        self.btn_ct = self._toggle_btn(r1, "CT",   self._toggle_through)
-        tk.Label(r1, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
-                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 7)).pack(side="left", padx=(1, 4))
+        self.btn_ct = self._toggle_btn(
+            r1, f"CT[{self._fmt_key(self._keybindings.get('click_through', '<F2>'))}]",
+            self._toggle_through)
         self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
         self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
 
@@ -899,9 +899,9 @@ class VinylTraceOverlay:
         self.btn_mh = self._toggle_btn(r2, "Flip H",     self._toggle_mirror_h)
         self.btn_mv = self._toggle_btn(r2, "Flip V",     self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r2, "Grid",       self._toggle_grid)
-        self.btn_ct = self._toggle_btn(r2, "Click-Thru", self._toggle_through)
-        tk.Label(r2, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
-                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)).pack(side="left", padx=(2, 6))
+        self.btn_ct = self._toggle_btn(
+            r2, f"Click-Thru [{self._fmt_key(self._keybindings.get('click_through', '<F2>'))}]",
+            self._toggle_through)
         self.btn_lk = self._toggle_btn(r2, "Lock Pos",   self._toggle_lock)
         self.btn_bg = self._toggle_btn(r2, "Light BG",   self._toggle_light_bg)
 
@@ -1024,9 +1024,9 @@ class VinylTraceOverlay:
         self.btn_mh = self._toggle_btn(r4, "Flip H",     self._toggle_mirror_h)
         self.btn_mv = self._toggle_btn(r4, "Flip V",     self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r4, "Grid",       self._toggle_grid)
-        self.btn_ct = self._toggle_btn(r4, "Click-Thru", self._toggle_through)
-        tk.Label(r4, text=self._fmt_key(self._keybindings.get("click_through", "<F2>")),
-                 bg=BG, fg=self.c("text_muted"), font=("Segoe UI", 8)).pack(side="left", padx=(2, 6))
+        self.btn_ct = self._toggle_btn(
+            r4, f"Click-Thru [{self._fmt_key(self._keybindings.get('click_through', '<F2>'))}]",
+            self._toggle_through)
         self.btn_lk = self._toggle_btn(r4, "Lock Pos",   self._toggle_lock)
         self.btn_bg = self._toggle_btn(r4, "Light BG",   self._toggle_light_bg)
 
@@ -1410,7 +1410,7 @@ class VinylTraceOverlay:
     def _toggle_through(self):
         self.through_var.set(not self.through_var.get())
         self._set_toggle(self.btn_ct, self.through_var.get())
-        self._key_was_down.clear()  # CT切替時にキー状態をリセット
+        self._key_was_down["click_through"] = True  # 直後の再発火を防止
         self._apply_through()
 
     def _toggle_lock(self):
@@ -1508,16 +1508,6 @@ class VinylTraceOverlay:
         """Click-Through ON/OFF に関わらずポーリングし、長押し（500ms）でトグルする。
         ON中はフォーカスを失うため root.bind が効かないので GetAsyncKeyState を使う。"""
         if IS_WINDOWS:
-            # Click-Through 長押しトグル
-            vk_ct = self._get_vk(self._keybindings.get("click_through", "<F2>"))
-            if vk_ct:
-                if ctypes.windll.user32.GetAsyncKeyState(vk_ct) & 0x8000:
-                    self._ct_hold_count += 1
-                    if self._ct_hold_count == 5:
-                        self._toggle_through()
-                else:
-                    self._ct_hold_count = 0
-
             # Peek: 押している間だけ非表示・topmost解除
             vk_pk = self._get_vk(self._keybindings.get("peek", "<F6>"))
             if vk_pk:
@@ -1545,17 +1535,18 @@ class VinylTraceOverlay:
         alt   = bool(u32.GetAsyncKeyState(0x12) & 0x8000)  # VK_MENU
 
         action_map = {
-            "toggle_ui":   self._toggle_controls,
-            "toggle_grid": self._toggle_grid,
-            "light_bg":    self._toggle_light_bg,
-            "hsb_lock":    self._toggle_hsb_lock,
-            "copy_color":  self._copy_hsb,
-            "fullscreen":  self._toggle_fullscreen,
-            "scale_up":    lambda: self._adj_scale(10),
-            "scale_down":  lambda: self._adj_scale(-10),
-            "layer_inc":   self._layer_inc,
-            "layer_dec":   self._layer_dec,
-            "open_image":  self.open_image,
+            "click_through": self._toggle_through,
+            "toggle_ui":     self._toggle_controls,
+            "toggle_grid":   self._toggle_grid,
+            "light_bg":      self._toggle_light_bg,
+            "hsb_lock":      self._toggle_hsb_lock,
+            "copy_color":    self._copy_hsb,
+            "fullscreen":    self._toggle_fullscreen,
+            "scale_up":      lambda: self._adj_scale(10),
+            "scale_down":    lambda: self._adj_scale(-10),
+            "layer_inc":     self._layer_inc,
+            "layer_dec":     self._layer_dec,
+            "open_image":    self.open_image,
         }
 
         for action, handler in action_map.items():
