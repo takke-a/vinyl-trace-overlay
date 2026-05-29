@@ -1415,9 +1415,16 @@ class VinylTraceOverlay:
         self.is_fs = not self.is_fs
         if self.is_fs:
             self._saved_geom = self.root.geometry()
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-            self.root.geometry(f"{sw}x{sh}+0+0")
+            if IS_WINDOWS and self._hwnd:
+                # Tk の NC 領域調整をバイパスして Win32 で直接配置
+                u32 = ctypes.windll.user32
+                sw  = u32.GetSystemMetrics(0)   # SM_CXSCREEN
+                sh  = u32.GetSystemMetrics(1)   # SM_CYSCREEN
+                u32.SetWindowPos(self._hwnd, 0, 0, 0, sw, sh, 0x0004)  # SWP_NOZORDER
+            else:
+                sw = self.root.winfo_screenwidth()
+                sh = self.root.winfo_screenheight()
+                self.root.geometry(f"{sw}x{sh}+0+0")
         elif self._saved_geom:
             self.root.geometry(self._saved_geom)
         if self.through_var.get():
