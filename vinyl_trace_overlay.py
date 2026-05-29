@@ -188,6 +188,7 @@ class VinylTraceOverlay:
         self.color_fmt_var = tk.StringVar(value="HSB")
         self._keybindings = dict(self.DEFAULT_KEYS)
         self._rebinding_action = None
+        self._key_was_down = {}
         self._api_key = ""
         self._ai_busy = False
 
@@ -1398,7 +1399,9 @@ class VinylTraceOverlay:
 
     def _toggle_through(self):
         self.through_var.set(not self.through_var.get())
-        self._set_toggle(self.btn_ct, self.through_var.get()); self._apply_through()
+        self._set_toggle(self.btn_ct, self.through_var.get())
+        self._key_was_down.clear()  # CT切替時にキー状態をリセット
+        self._apply_through()
 
     def _toggle_lock(self):
         self.lock_var.set(not self.lock_var.get())
@@ -1413,20 +1416,39 @@ class VinylTraceOverlay:
 
     def _toggle_fullscreen(self):
         self.is_fs = not self.is_fs
-        if self.is_fs:
-            self._saved_geom = self.root.geometry()
-            if IS_WINDOWS and self._hwnd:
-                # Tk の NC 領域調整をバイパスして Win32 で直接配置
-                u32 = ctypes.windll.user32
-                sw  = u32.GetSystemMetrics(0)   # SM_CXSCREEN
-                sh  = u32.GetSystemMetrics(1)   # SM_CYSCREEN
-                u32.SetWindowPos(self._hwnd, 0, 0, 0, sw, sh, 0x0004)  # SWP_NOZORDER
-            else:
+        if IS_WINDOWS:
+            # HWND を毎回再取得（Tk が内部で再生成した場合にも対応）
+            inner = self.root.winfo_id()
+            hwnd  = ctypes.windll.user32.GetParent(inner) or inner
+            self._hwnd = hwnd
+            u32 = ctypes.windll.user32
+
+            class _RECT(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                             ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+            if self.is_fs:
+                # Win32 から直接 rect を保存（Tk の NC 領域補正を回避）
+                r = _RECT()
+                u32.GetWindowRect(hwnd, ctypes.byref(r))
+                self._saved_geom = (
+                    f"{r.right - r.left}x{r.bottom - r.top}+{r.left}+{r.top}")
+                sw = u32.GetSystemMetrics(0)   # SM_CXSCREEN
+                sh = u32.GetSystemMetrics(1)   # SM_CYSCREEN
+                u32.SetWindowPos(hwnd, 0, 0, 0, sw, sh, 0x0004)  # SWP_NOZORDER
+            elif self._saved_geom:
+                m = re.match(r'(\d+)x(\d+)\+(-?\d+)\+(-?\d+)', self._saved_geom)
+                if m:
+                    w, h, x, y = (int(m.group(i)) for i in range(1, 5))
+                    u32.SetWindowPos(hwnd, 0, x, y, w, h, 0x0004)  # SWP_NOZORDER
+        else:
+            if self.is_fs:
+                self._saved_geom = self.root.geometry()
                 sw = self.root.winfo_screenwidth()
                 sh = self.root.winfo_screenheight()
                 self.root.geometry(f"{sw}x{sh}+0+0")
-        elif self._saved_geom:
-            self.root.geometry(self._saved_geom)
+            elif self._saved_geom:
+                self.root.geometry(self._saved_geom)
         if self.through_var.get():
             self.root.after(150, self._apply_through)
 
@@ -1499,7 +1521,48 @@ class VinylTraceOverlay:
                     self.root.attributes("-alpha", self.opacity_var.get() / 100)
                     self.root.attributes("-topmost", True)
 
+            # Click-Through ON中は root.bind が効かないため全キーをポーリング
+            if self.through_var.get():
+                self._poll_action_keys_ct()
+
         self.root.after(100, self._poll_global_hotkeys)
+
+    def _poll_action_keys_ct(self):
+        """Click-Through ON中、フォーカスなしでも全ショートカットを処理する。"""
+        u32   = ctypes.windll.user32
+        ctrl  = bool(u32.GetAsyncKeyState(0x11) & 0x8000)  # VK_CONTROL
+        shift = bool(u32.GetAsyncKeyState(0x10) & 0x8000)  # VK_SHIFT
+        alt   = bool(u32.GetAsyncKeyState(0x12) & 0x8000)  # VK_MENU
+
+        action_map = {
+            "toggle_ui":   self._toggle_controls,
+            "toggle_grid": self._toggle_grid,
+            "light_bg":    self._toggle_light_bg,
+            "hsb_lock":    self._toggle_hsb_lock,
+            "copy_color":  self._copy_hsb,
+            "fullscreen":  self._toggle_fullscreen,
+            "scale_up":    lambda: self._adj_scale(10),
+            "scale_down":  lambda: self._adj_scale(-10),
+            "layer_inc":   self._layer_inc,
+            "layer_dec":   self._layer_dec,
+            "open_image":  self.open_image,
+        }
+
+        for action, handler in action_map.items():
+            tk_key    = self._keybindings.get(action, "")
+            req_ctrl  = "Control-" in tk_key
+            req_shift = "Shift-"   in tk_key
+            req_alt   = "Alt-"     in tk_key
+            if req_ctrl != ctrl or req_shift != shift or req_alt != alt:
+                continue
+            vk = self._get_vk(tk_key)
+            if not vk:
+                continue
+            pressed = bool(u32.GetAsyncKeyState(vk) & 0x8000)
+            prev    = self._key_was_down.get(action, False)
+            self._key_was_down[action] = pressed
+            if pressed and not prev:
+                handler()
 
     # ═══════════════════════════════════════════════════════════════
     # Layer counter
@@ -1677,6 +1740,9 @@ class VinylTraceOverlay:
             "F1": 0x70, "F2": 0x71, "F3": 0x72, "F4": 0x73,
             "F5": 0x74, "F6": 0x75, "F7": 0x76, "F8": 0x77,
             "F9": 0x78, "F10": 0x79, "F11": 0x7A, "F12": 0x7B,
+            "Up": 0x26, "Down": 0x28, "Left": 0x25, "Right": 0x27,
+            "Return": 0x0D, "space": 0x20, "Escape": 0x1B,
+            "equal": 0xBB, "plus": 0xBB, "minus": 0xBD, "Tab": 0x09,
         }
         m = re.search(r"([A-Za-z0-9]+)>$", tk_key)
         if not m:
@@ -1686,6 +1752,8 @@ class VinylTraceOverlay:
             return vk_map[sym]
         if len(sym) == 1 and sym.isalpha():
             return ord(sym.upper())
+        if len(sym) == 1 and sym.isdigit():
+            return ord(sym)
         return None
 
     def _apply_keybinding(self, action):
