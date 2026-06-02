@@ -119,6 +119,7 @@ class VinylTraceOverlay:
         "light_bg":      "<F4>",
         "hsb_lock":      "<F5>",
         "peek":          "<n>",
+        "hide_bg":       "<m>",
         "copy_color":    "<Control-c>",
         "fullscreen":    "<F11>",
         "scale_up":      "<Control-equal>",
@@ -135,6 +136,7 @@ class VinylTraceOverlay:
         "light_bg":      "Light BG",
         "hsb_lock":      "HSB Lock",
         "peek":          "Peek (Hide)",
+        "hide_bg":       "Solid View",
         "copy_color":    "Copy Color",
         "fullscreen":    "Fullscreen",
         "scale_up":      "Scale Up",
@@ -189,6 +191,8 @@ class VinylTraceOverlay:
         self._keybindings = dict(self.DEFAULT_KEYS)
         self._rebinding_action = None
         self._key_was_down = {}
+        self._m_peeking = False
+        self._lbtn_was_down = False
         self._api_key = ""
         self._ai_busy = False
 
@@ -1518,12 +1522,27 @@ class VinylTraceOverlay:
                     self.root.attributes("-topmost", False)
                 elif not pressing and self._peeking:
                     self._peeking = False
-                    self.root.attributes("-alpha", self.opacity_var.get() / 100)
+                    if not self._m_peeking:
+                        self.root.attributes("-alpha", self.opacity_var.get() / 100)
                     self.root.attributes("-topmost", True)
+
+            # Solid View (M): 押している間 opacity=100% でForza画面をブロック
+            vk_hb = self._get_vk(self._keybindings.get("hide_bg", "<m>"))
+            if vk_hb:
+                pressing_hb = bool(ctypes.windll.user32.GetAsyncKeyState(vk_hb) & 0x8000)
+                if pressing_hb and not self._m_peeking:
+                    self._m_peeking = True
+                    self.root.attributes("-alpha", 1.0)
+                    self.root.attributes("-topmost", True)
+                elif not pressing_hb and self._m_peeking:
+                    self._m_peeking = False
+                    if not self._peeking:
+                        self.root.attributes("-alpha", self.opacity_var.get() / 100)
 
             # Click-Through ON中は root.bind が効かないため全キーをポーリング
             if self.through_var.get():
                 self._poll_action_keys_ct()
+                self._poll_ct_button_click()
 
         self.root.after(100, self._poll_global_hotkeys)
 
@@ -1564,6 +1583,36 @@ class VinylTraceOverlay:
             self._key_was_down[action] = pressed
             if pressed and not prev:
                 handler()
+
+        # Opacity: ↑/↓キー（Ctrlなし）でOpacity ±5%
+        if not ctrl and not shift and not alt:
+            for vk, delta, key_id in ((0x26, 5, "__op_up"), (0x28, -5, "__op_dn")):
+                pressed = bool(u32.GetAsyncKeyState(vk) & 0x8000)
+                prev    = self._key_was_down.get(key_id, False)
+                self._key_was_down[key_id] = pressed
+                if pressed and not prev:
+                    self._adj_opacity(delta)
+
+    def _poll_ct_button_click(self):
+        """CT ON中でもClick-Thruボタン自体はマウスクリックで操作できるようにする。"""
+        u32 = ctypes.windll.user32
+        lb_pressed = bool(u32.GetAsyncKeyState(0x01) & 0x8000)
+        prev = self._lbtn_was_down
+        self._lbtn_was_down = lb_pressed
+        if lb_pressed and not prev:
+            class _POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+            pt = _POINT()
+            u32.GetCursorPos(ctypes.byref(pt))
+            try:
+                bx = self.btn_ct.winfo_rootx()
+                by = self.btn_ct.winfo_rooty()
+                bw = self.btn_ct.winfo_width()
+                bh = self.btn_ct.winfo_height()
+                if bx <= pt.x <= bx + bw and by <= pt.y <= by + bh:
+                    self._toggle_through()
+            except Exception:
+                pass
 
     # ═══════════════════════════════════════════════════════════════
     # Layer counter
@@ -1641,6 +1690,11 @@ class VinylTraceOverlay:
         v = max(5, min(400, int(self.scale_var.get()) + d))
         self.scale_var.set(v); self.scale_lbl.configure(text=f"{v}%")
         self.update_display()
+
+    def _adj_opacity(self, d):
+        v = max(10, min(100, int(self.opacity_var.get()) + d))
+        self.opacity_var.set(v)
+        self._on_opacity(v)
 
     def _toggle_controls(self):
         self.controls_vis = not self.controls_vis
@@ -1848,6 +1902,8 @@ class VinylTraceOverlay:
         self.root.bind("<Control-plus>", lambda _: self._adj_scale(10))
         self.root.bind("<Escape>",
             lambda _: self._toggle_fullscreen() if self.is_fs else self.root.quit())
+        self.root.bind("<Up>",   lambda _: self._adj_opacity(5))
+        self.root.bind("<Down>", lambda _: self._adj_opacity(-5))
 
     # ═══════════════════════════════════════════════════════════════
     # Widget factories
