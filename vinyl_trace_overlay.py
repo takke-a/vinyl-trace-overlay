@@ -195,6 +195,7 @@ class VinylTraceOverlay:
         self._lbtn_was_down = False
         self._api_key = ""
         self._ai_busy = False
+        self._lock_auto_ct = False
 
         self._setup_window()
         self._load_settings()
@@ -667,11 +668,12 @@ class VinylTraceOverlay:
         self.btn_mh = self._toggle_btn(r1, "H",   self._toggle_mirror_h)
         self.btn_mv = self._toggle_btn(r1, "V",   self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r1, "Grid", self._toggle_grid)
+        self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
+        self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
         self.btn_ct = self._toggle_btn(
             r1, f"CT[{self._fmt_key(self._keybindings.get('click_through', '<F2>'))}]",
             self._toggle_through)
-        self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
-        self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
+        self.btn_ct.pack_configure(side="right", padx=(0, 4))
 
         # Row 2: Grid / Layer / HSB
         r2 = tk.Frame(parent, bg=BG)
@@ -786,11 +788,12 @@ class VinylTraceOverlay:
         self.btn_mh = self._toggle_btn(r1, "H",   self._toggle_mirror_h)
         self.btn_mv = self._toggle_btn(r1, "V",   self._toggle_mirror_v)
         self.btn_gr = self._toggle_btn(r1, "Grid", self._toggle_grid)
+        self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
+        self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
         self.btn_ct = self._toggle_btn(
             r1, f"CT[{self._fmt_key(self._keybindings.get('click_through', '<F2>'))}]",
             self._toggle_through)
-        self.btn_lk = self._toggle_btn(r1, "Lk",  self._toggle_lock)
-        self.btn_bg = self._toggle_btn(r1, "LBG",  self._toggle_light_bg)
+        self.btn_ct.pack_configure(side="right", padx=(0, 4))
 
         # Row 2: Grid / Layer / HSB (通常サイズ)
         r2 = tk.Frame(parent, bg=BG)
@@ -1391,6 +1394,7 @@ class VinylTraceOverlay:
 
     def _pan_start(self, e): self._psx, self._psy = e.x, e.y
     def _pan_move(self, e):
+        if self.lock_var.get(): return
         self.pan_x += e.x - self._psx;  self._psx = e.x
         self.pan_y += e.y - self._psy;  self._psy = e.y
         self._redraw()
@@ -1422,6 +1426,17 @@ class VinylTraceOverlay:
         locked = self.lock_var.get()
         self._set_toggle(self.btn_lk, locked)
         self.btn_lk.configure(text="Locked" if locked else "Lock Pos")
+        if locked and not self.through_var.get():
+            self._lock_auto_ct = True
+            self.through_var.set(True)
+            self._set_toggle(self.btn_ct, True)
+            self._key_was_down["click_through"] = True
+            self._apply_through()
+        elif not locked and self._lock_auto_ct:
+            self._lock_auto_ct = False
+            self.through_var.set(False)
+            self._set_toggle(self.btn_ct, False)
+            self._apply_through()
 
     def _toggle_light_bg(self):
         self.light_bg_var.set(not self.light_bg_var.get())
