@@ -2,7 +2,7 @@
 """Vinyl Trace Overlay  v3.2"""
 
 import sys, os, ctypes, json, re, tkinter as tk, threading, base64, io
-from tkinter import ttk, filedialog, colorchooser, messagebox
+from tkinter import ttk, filedialog, colorchooser, messagebox, simpledialog
 from PIL import Image, ImageTk, ImageFilter, ImageOps, ImageEnhance, ImageDraw
 
 IS_WINDOWS = sys.platform == "win32"
@@ -196,6 +196,8 @@ class VinylTraceOverlay:
         self._api_key = ""
         self._ai_busy = False
         self._lock_auto_ct = False
+        self.image_path = None
+        self._presets = []
 
         self._setup_window()
         self._load_settings()
@@ -336,6 +338,7 @@ class VinylTraceOverlay:
         self._build_tab_bar(self.ctrl_section)
 
         self._tab_frame_controls = tk.Frame(self.ctrl_section, bg=self.c("bg_panel"))
+        self._build_preset_bar(self._tab_frame_controls)
         self._controls_container = tk.Frame(
             self._tab_frame_controls, bg=self.c("bg_panel"))
         self._controls_container.pack(fill="x")
@@ -1154,6 +1157,7 @@ class VinylTraceOverlay:
     def _load(self, path):
         try:
             self.image_original = Image.open(path).convert("RGBA")
+            self.image_path = path
             self.pan_x = self.pan_y = 0
             img = self.image_original
             self.status_var.set(
@@ -1176,6 +1180,115 @@ class VinylTraceOverlay:
         self.btn_clear.pack_forget()
         self.lbl_image_path.pack_forget()
         self.status_var.set("No image loaded  —  Ctrl+O to open")
+
+    # ═══════════════════════════════════════════════════════════════
+    # Position presets （画像と位置・表示状態の保存／呼び出し）
+    # ═══════════════════════════════════════════════════════════════
+
+    def _build_preset_bar(self, parent):
+        BG = self.c("bg_panel")
+        bar = tk.Frame(parent, bg=BG)
+        bar.pack(fill="x", padx=8, pady=(5, 0))
+        tk.Label(bar, text="Pos Preset", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 8)).pack(side="left", padx=(0, 5))
+        self._preset_var = tk.StringVar(value="")
+        self._style_cb_small()
+        self._preset_cb = ttk.Combobox(
+            bar, textvariable=self._preset_var, width=18, state="readonly",
+            style="Small.TCombobox",
+            values=[p.get("name", "") for p in self._presets])
+        self._preset_cb.pack(side="left", padx=(0, 4))
+        self._preset_cb.bind("<<ComboboxSelected>>", self._load_preset)
+        self._flat_btn(bar, "Load",     self._load_preset).pack(side="left", padx=(0, 3))
+        self._flat_btn(bar, "Save Pos", self._save_preset).pack(side="left", padx=(0, 3))
+        self._flat_btn(bar, "Del",      self._delete_preset).pack(side="left", padx=(0, 3))
+
+    def _refresh_preset_menu(self):
+        if hasattr(self, "_preset_cb"):
+            self._preset_cb.configure(
+                values=[p.get("name", "") for p in self._presets])
+
+    def _ask_preset_name(self):
+        cur = self._preset_var.get().strip()
+        # メインウィンドウが topmost のままだとダイアログが背面に隠れるため一時解除
+        self.root.attributes("-topmost", False)
+        try:
+            name = simpledialog.askstring(
+                "Save Position Preset", "プリセット名:",
+                initialvalue=cur, parent=self.root)
+        finally:
+            self.root.attributes("-topmost", True)
+        return (name or "").strip()
+
+    def _save_preset(self):
+        if self.image_original is None:
+            messagebox.showinfo("Save Preset", "先に画像を開いてください。")
+            return
+        name = self._ask_preset_name()
+        if not name:
+            return
+        preset = {
+            "name":     name,
+            "path":     self.image_path or "",
+            "pan_x":    int(self.pan_x),
+            "pan_y":    int(self.pan_y),
+            "scale":    round(float(self.scale_var.get()), 1),
+            "opacity":  round(float(self.opacity_var.get()), 1),
+            "mirror_h": bool(self.mirror_h_var.get()),
+            "mirror_v": bool(self.mirror_v_var.get()),
+            "mode":     self.mode_var.get(),
+        }
+        # 同名は上書き
+        self._presets = [p for p in self._presets if p.get("name") != name]
+        self._presets.append(preset)
+        self._save_settings()
+        self._refresh_preset_menu()
+        self._preset_var.set(name)
+        self.status_var.set(f"プリセット保存: {name}")
+
+    def _load_preset(self, *_):
+        name = self._preset_var.get().strip()
+        if not name:
+            return
+        p = next((x for x in self._presets if x.get("name") == name), None)
+        if p is None:
+            return
+        path = p.get("path") or ""
+        if path and os.path.isfile(path):
+            self._load(path)            # 画像を開く（pan は 0 にリセットされる）
+        elif self.image_original is None:
+            messagebox.showinfo(
+                "Load Preset",
+                "保存時の画像が見つかりません。\n"
+                "画像を開いてから読み込むと位置だけ復元します。")
+            return
+        # 表示状態を復元
+        self.scale_var.set(p.get("scale", 100))
+        self.opacity_var.set(p.get("opacity", 70))
+        self.mirror_h_var.set(bool(p.get("mirror_h", False)))
+        self.mirror_v_var.set(bool(p.get("mirror_v", False)))
+        self.mode_var.set(p.get("mode", "Normal"))
+        self.pan_x = int(p.get("pan_x", 0))
+        self.pan_y = int(p.get("pan_y", 0))
+        # ボタン／ラベルの見た目を同期
+        if hasattr(self, "btn_mh"):
+            self._set_toggle(self.btn_mh, self.mirror_h_var.get())
+        if hasattr(self, "btn_mv"):
+            self._set_toggle(self.btn_mv, self.mirror_v_var.get())
+        self._on_opacity(self.opacity_var.get())
+        self._on_scale(self.scale_var.get())
+        self.update_display()
+        self.status_var.set(f"プリセット読込: {name}")
+
+    def _delete_preset(self):
+        name = self._preset_var.get().strip()
+        if not name:
+            return
+        self._presets = [p for p in self._presets if p.get("name") != name]
+        self._save_settings()
+        self._refresh_preset_menu()
+        self._preset_var.set("")
+        self.status_var.set(f"プリセット削除: {name}")
 
     # ═══════════════════════════════════════════════════════════════
     # Display
@@ -1777,6 +1890,7 @@ class VinylTraceOverlay:
                     if action in self._keybindings:
                         self._keybindings[action] = key
                 self._api_key = data.get("api_key", "")
+                self._presets = data.get("presets", [])
         except Exception:
             pass
 
@@ -1784,7 +1898,8 @@ class VinylTraceOverlay:
         try:
             with open(self._settings_path(), "w", encoding="utf-8") as f:
                 json.dump({"keybindings": dict(self._keybindings),
-                           "api_key": self._api_key}, f,
+                           "api_key": self._api_key,
+                           "presets": self._presets}, f,
                           indent=2, ensure_ascii=False)
         except Exception:
             pass
