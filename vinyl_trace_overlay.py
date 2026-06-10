@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vinyl Trace Overlay  v3.2"""
+"""Vinyl Trace Overlay  v3.3"""
 
 import sys, os, ctypes, json, re, tkinter as tk, threading, base64, io
 from tkinter import ttk, filedialog, colorchooser, messagebox, simpledialog
@@ -385,7 +385,7 @@ class VinylTraceOverlay:
         self._wbtn(bar, "maximize", self._toggle_fullscreen)
         self._wbtn(bar, "minimize", self._minimize)
 
-        tk.Label(bar, text="v3.2", bg=self.c("titlebar"),
+        tk.Label(bar, text="v3.3", bg=self.c("titlebar"),
                  fg=self.c("text_muted"), font=("Segoe UI", 8)
                  ).pack(side="right", padx=8)
 
