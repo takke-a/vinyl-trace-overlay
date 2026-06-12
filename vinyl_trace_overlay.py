@@ -198,6 +198,8 @@ class VinylTraceOverlay:
         self._lock_auto_ct = False
         self.image_path = None
         self._presets = []
+        self._color_history = []   # 直近で Copy した色（最大3件）
+        self._hist_sw = []
 
         self._setup_window()
         self._load_settings()
@@ -621,6 +623,7 @@ class VinylTraceOverlay:
                      ).pack(side="left", padx=(0, 6))
         self._flat_btn(r6, "Copy", self._copy_hsb).pack(side="left", padx=(4, 5))
         self.btn_hsb_lock = self._toggle_btn(r6, "Lock  [F5]", self._toggle_hsb_lock)
+        self._build_history(r6)
 
     # ── Controls compact (2-row horizontal) ───────────────────────
 
@@ -741,6 +744,7 @@ class VinylTraceOverlay:
                      ).pack(side="left", padx=(0, 2))
         self._flat_btn(r2, "Copy", self._copy_hsb).pack(side="left", padx=(3, 3))
         self.btn_hsb_lock = self._toggle_btn(r2, "Lock", self._toggle_hsb_lock)
+        self._build_history(r2, sw=14)
 
     # ── Controls compact-relaxed (2-row, wider sliders) ───────────
 
@@ -857,6 +861,7 @@ class VinylTraceOverlay:
                      ).pack(side="left", padx=(0, 4))
         self._flat_btn(r2, "Copy", self._copy_hsb).pack(side="left", padx=(4, 4))
         self.btn_hsb_lock = self._toggle_btn(r2, "Lock  [F5]", self._toggle_hsb_lock)
+        self._build_history(r2)
 
     # ── Controls medium (3-row) ────────────────────────────────────
 
@@ -974,6 +979,7 @@ class VinylTraceOverlay:
                      ).pack(side="left", padx=(0, 4))
         self._flat_btn(r3, "Copy", self._copy_hsb).pack(side="left", padx=(4, 4))
         self.btn_hsb_lock = self._toggle_btn(r3, "Lock  [F5]", self._toggle_hsb_lock)
+        self._build_history(r3)
 
     # ── Controls extended (5-row) ──────────────────────────────────
 
@@ -1099,6 +1105,7 @@ class VinylTraceOverlay:
                      ).pack(side="left", padx=(0, 5))
         self._flat_btn(r5, "Copy", self._copy_hsb).pack(side="left", padx=(4, 5))
         self.btn_hsb_lock = self._toggle_btn(r5, "Lock  [F5]", self._toggle_hsb_lock)
+        self._build_history(r5)
 
     # ── Canvas ─────────────────────────────────────────────────────
 
@@ -1890,10 +1897,65 @@ class VinylTraceOverlay:
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
         self.status_var.set(f"Copied {fmt}: {label}")
+        self._push_color_history()
 
     def _toggle_hsb_lock(self):
         self._hsb_locked = not self._hsb_locked
         self._set_toggle(self.btn_hsb_lock, self._hsb_locked)
+
+    # ── Color history （直近で Copy した色を最大3件表示） ───────────
+
+    def _build_history(self, parent, sw=16):
+        """HSB 行の末尾に「使用した色」履歴スウォッチ3つを並べる。
+        各レイアウトの _build_controls_* から呼ばれ、毎回作り直される。"""
+        BG = self.c("bg_panel")
+        tk.Frame(parent, bg=self.c("separator"), width=1).pack(
+            side="left", fill="y", padx=(8, 6), pady=2)
+        tk.Label(parent, text="Hist", bg=BG, fg=self.c("text_muted"),
+                 font=("Segoe UI", 8)).pack(side="left", padx=(0, 4))
+        self._hist_sw = []
+        for i in range(3):
+            s = tk.Frame(parent, width=sw, height=sw, bg=self.c("bg_input"),
+                         cursor="hand2", highlightthickness=1,
+                         highlightbackground=self.c("separator"))
+            s.pack_propagate(False)
+            s.pack(side="left", padx=(0, 3))
+            s.bind("<Button-1>", lambda _e, idx=i: self._recall_history(idx))
+            self._hist_sw.append(s)
+        self._refresh_history()
+
+    def _push_color_history(self):
+        """現在の色を履歴の先頭に追加（同色は重複させず先頭へ、最大3件）。"""
+        entry = {"rgb": tuple(self._last_rgb),
+                 "H": self._last_H, "S": self._last_S, "B": self._last_B,
+                 "hex": self._last_hex}
+        self._color_history = [e for e in self._color_history
+                               if e["rgb"] != entry["rgb"]]
+        self._color_history.insert(0, entry)
+        self._color_history = self._color_history[:3]
+        self._refresh_history()
+
+    def _refresh_history(self):
+        for i, sw in enumerate(self._hist_sw):
+            if i < len(self._color_history):
+                sw.configure(bg=self._color_history[i]["hex"])
+            else:
+                sw.configure(bg=self.c("bg_input"))
+
+    def _recall_history(self, idx):
+        """履歴スウォッチをクリックでカラーパネルへ復元し、再コピーする。"""
+        if idx >= len(self._color_history):
+            return
+        e = self._color_history[idx]
+        self._last_rgb = e["rgb"]
+        self._last_H, self._last_S, self._last_B = e["H"], e["S"], e["B"]
+        self._last_hex = e["hex"]
+        if hasattr(self, "hsb_sw"):
+            self.hsb_sw.configure(bg=e["hex"])
+        if hasattr(self, "color_sw"):
+            self.color_sw.configure(bg=e["hex"])
+        self._update_color_panel()
+        self._copy_hsb()
 
     # ═══════════════════════════════════════════════════════════════
     # Settings / Key Config
