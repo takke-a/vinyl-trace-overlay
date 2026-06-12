@@ -1457,11 +1457,17 @@ class VinylTraceOverlay:
         self.update_display()
 
     def _on_hover(self, event):
+        self._sample_at_canvas(event.x, event.y)
+
+    def _sample_at_canvas(self, cx, cy):
+        """canvas 座標 (cx, cy) 直下の参照画像ピクセルをサンプリングして
+        カラーパネル・スウォッチ・ステータスバーを更新する。
+        通常のホバーと Click-Through 中ポーリングの共通処理。"""
         if not self.image_display: return
         cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
         iw, ih = self.image_display.size
-        px = event.x - (cw // 2 + self.pan_x - iw // 2)
-        py = event.y - (ch // 2 + self.pan_y - ih // 2)
+        px = cx - (cw // 2 + self.pan_x - iw // 2)
+        py = cy - (ch // 2 + self.pan_y - ih // 2)
         if 0 <= px < iw and 0 <= py < ih:
             try:
                 r, g, b, a = self.image_display.getpixel((px, py))
@@ -1671,6 +1677,7 @@ class VinylTraceOverlay:
             if self.through_var.get():
                 self._poll_action_keys_ct()
                 self._poll_ct_button_click()
+                self._poll_color_sample_ct()
 
         self.root.after(100, self._poll_global_hotkeys)
 
@@ -1741,6 +1748,23 @@ class VinylTraceOverlay:
                     self._toggle_through()
             except Exception:
                 pass
+
+    def _poll_color_sample_ct(self):
+        """Click-Through（F2）ON中・ロック中でも、カーソル直下の参照画像の色を
+        取得し続ける。CT 中は canvas が Motion を受け取れないため、Win32 の
+        カーソル座標を canvas 座標に変換して直接サンプリングする。"""
+        if self.image_display is None or self._hsb_locked:
+            return
+        try:
+            class _POINT(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+            pt = _POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+            cx = pt.x - self.canvas.winfo_rootx()
+            cy = pt.y - self.canvas.winfo_rooty()
+            self._sample_at_canvas(cx, cy)
+        except Exception:
+            pass
 
     # ═══════════════════════════════════════════════════════════════
     # Layer counter
